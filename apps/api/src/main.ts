@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Logger, ValidationPipe } from "@nestjs/common";
+import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
@@ -8,7 +8,7 @@ import { AppModule } from "./app.module.js";
 import { FactoryExceptionFilter } from "./common/http-exception.filter.js";
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
   app.useLogger(new Logger("FactoryAPI"));
   app.setGlobalPrefix("api");
   app.use(cookieParser());
@@ -32,9 +32,6 @@ async function bootstrap(): Promise<void> {
     credentials: true,
     allowedHeaders: ["content-type", "x-csrf-token", "x-request-id", "idempotency-key"],
   });
-  app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
-  );
   app.useGlobalFilters(new FactoryExceptionFilter());
   app.enableShutdownHooks();
 

@@ -162,6 +162,20 @@ services:
       CODEX_ADAPTER: fake
       CODEX_QUEUE_NAME: ${CODEX_QUEUE_NAME:-codex-tasks}
       CODEX_CONCURRENCY: ${CODEX_CONCURRENCY:-1}
+      CODEX_JOB_TIMEOUT_MS: ${CODEX_JOB_TIMEOUT_MS:-1800000}
+      CODEX_JOB_MAX_ATTEMPTS: ${CODEX_JOB_MAX_ATTEMPTS:-3}
+      CODEX_WORKSPACE_ROOT: /var/lib/factory-workspaces
+      CODEX_WORKSPACE_CLEANUP: ${CODEX_WORKSPACE_CLEANUP:-true}
+      CODEX_RESULT_SCHEMA_PATH: /workspace/schemas/codex/codex-result.schema.json
+      CODEX_ALLOWED_TEST_COMMANDS: ${CODEX_ALLOWED_TEST_COMMANDS:-pnpm test,pnpm lint,pnpm typecheck,./gradlew test,./gradlew lint}
+      GITHUB_ADAPTER: ${GITHUB_ADAPTER:-fake}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
+      GITHUB_PRIVATE_KEY_BASE64: ${GITHUB_PRIVATE_KEY_BASE64:-}
+      GITHUB_FINE_GRAINED_PAT: ${GITHUB_FINE_GRAINED_PAT:-}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+    volumes:
+      - factory_workspaces:/var/lib/factory-workspaces
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -173,3 +187,4 @@ volumes:
   factory_postgres:
   factory_redis:
   factory_minio:
+  factory_workspaces:

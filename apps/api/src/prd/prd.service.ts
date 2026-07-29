@@ -63,17 +63,6 @@ export class PrdService {
       throw new BadRequestException("Canonical PRD는 .md 또는 schema를 통과한 .json만 가능합니다.");
     }
 
-    const artifact = await this.artifacts.store(
-      projectId,
-      "PRD",
-      "02 Product",
-      file,
-      actor,
-      request,
-    );
-    const artifactVersion = artifact.versions[0];
-    if (!artifactVersion) throw new ConflictException("Artifact 버전을 생성하지 못했습니다.");
-
     let canonicalFormat: "MARKDOWN" | "JSON";
     let contentMarkdown: string | null = null;
     let contentJson: Prisma.InputJsonValue = {};
@@ -103,6 +92,17 @@ export class PrdService {
       }
       sections = markdownSections(contentMarkdown);
     }
+
+    const artifact = await this.artifacts.store(
+      projectId,
+      "PRD",
+      "02 Product",
+      file,
+      actor,
+      request,
+    );
+    const artifactVersion = artifact.versions[0];
+    if (!artifactVersion) throw new ConflictException("Artifact 버전을 생성하지 못했습니다.");
 
     const includedArtifactIds = parseStringArray(input.includedArtifactIds, "includedArtifactIds");
     const excludedScope = parseStringArray(input.excludedScope, "excludedScope");

@@ -17,25 +17,36 @@ import {
   Files,
   FolderKanban,
   Gauge,
+  GitBranch,
+  GitPullRequest,
   History,
   ListChecks,
   LockKeyhole,
   LogOut,
   Menu,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   TestTube2,
+  TerminalSquare,
   Upload,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { FormEvent, ReactNode } from "react";
 import { apiRequest } from "../lib/api";
 import type { AuthState } from "../lib/api";
-import type { Artifact, DecisionRecord, PrdVersion, Project } from "../lib/types";
+import type {
+  Artifact,
+  DecisionRecord,
+  DevelopmentTask,
+  DevelopmentTaskDetail,
+  PrdVersion,
+  Project,
+} from "../lib/types";
 
 const primaryNav = [
   ["dashboard", "대시보드", Gauge],
@@ -969,6 +980,666 @@ function ActivityPanel({ projectId }: { projectId: string }) {
   );
 }
 
+interface RepositoryDetail {
+  id: string;
+  owner: string;
+  name: string;
+  htmlUrl: string;
+  defaultBranch: string;
+  authMode: string;
+  lastSyncedAt?: string | null;
+  pullRequests: Array<{
+    number: number;
+    title: string;
+    state: string;
+    htmlUrl: string;
+    headSha: string;
+  }>;
+  checks: Array<{
+    name: string;
+    status: string;
+    conclusion?: string | null;
+    detailsUrl?: string | null;
+  }>;
+}
+
+function RepositoryPanel({ project, auth }: { project: Project; auth: AuthState }) {
+  const queryClient = useQueryClient();
+  const [owner, setOwner] = useState("");
+  const repository = useQuery({
+    queryKey: ["repository", project.id],
+    queryFn: () => apiRequest<RepositoryDetail>(`/projects/${project.id}/repository`),
+    enabled: Boolean(project.repository),
+  });
+  const remote = useQuery({
+    queryKey: ["github-repositories", owner],
+    queryFn: () =>
+      apiRequest<
+        Array<{
+          id: string;
+          owner: string;
+          name: string;
+          htmlUrl: string;
+          defaultBranch: string;
+          private: boolean;
+        }>
+      >(`/github/repositories?owner=${encodeURIComponent(owner)}`),
+    enabled: /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(owner),
+  });
+  const create = useMutation({
+    mutationFn: (form: HTMLFormElement) => {
+      const data = new FormData(form);
+      return apiRequest(`/projects/${project.id}/repository/create`, {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+        body: JSON.stringify({
+          owner: formString(data, "owner"),
+          name: formString(data, "name"),
+          description: formString(data, "description"),
+          private: data.get("private") === "on",
+          templateOwner: formString(data, "templateOwner") || undefined,
+          templateName: formString(data, "templateName") || undefined,
+        }),
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["repository", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
+    },
+  });
+  const connect = useMutation({
+    mutationFn: (selected: NonNullable<typeof remote.data>[number]) =>
+      apiRequest(`/projects/${project.id}/repository/connect`, {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+        body: JSON.stringify({
+          owner: selected.owner,
+          name: selected.name,
+          defaultBranch: selected.defaultBranch,
+          htmlUrl: selected.htmlUrl,
+          externalId: selected.id,
+        }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["repository", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
+    },
+  });
+
+  if (project.repository) {
+    const data = repository.data;
+    return (
+      <div className="grid gap-5">
+        <Card className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <GitBranch size={18} className="text-emerald-300" />
+                <h2 className="font-semibold">
+                  {project.repository.owner}/{project.repository.name}
+                </h2>
+              </div>
+              <a
+                className="mt-2 block text-sm text-zinc-500 hover:text-emerald-300"
+                href={project.repository.htmlUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {project.repository.htmlUrl}
+              </a>
+            </div>
+            <div className="flex gap-2">
+              <Badge tone="success">연결됨</Badge>
+              <Badge>{data?.authMode ?? "동기화 중"}</Badge>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3 border-t border-zinc-800 pt-5 text-sm sm:grid-cols-3">
+            <div>
+              <span className="block text-xs text-zinc-600">기본 Branch</span>
+              <code className="mt-2 block text-zinc-300">
+                {data?.defaultBranch ?? project.repository.defaultBranch}
+              </code>
+            </div>
+            <div>
+              <span className="block text-xs text-zinc-600">Pull Requests</span>
+              <span className="mt-2 block text-zinc-300">{data?.pullRequests.length ?? 0}</span>
+            </div>
+            <div>
+              <span className="block text-xs text-zinc-600">마지막 동기화</span>
+              <span className="mt-2 block text-zinc-300">
+                {data?.lastSyncedAt ? formatSeoul(data.lastSyncedAt) : "확인 중"}
+              </span>
+            </div>
+          </div>
+        </Card>
+        <div className="grid gap-5 xl:grid-cols-2">
+          <Card className="p-5">
+            <h3 className="font-semibold">Pull Requests</h3>
+            <div className="mt-4 grid gap-3">
+              {data?.pullRequests.length ? (
+                data.pullRequests.map((pull) => (
+                  <a
+                    className="flex items-center gap-3 rounded-lg border border-zinc-800 p-3 hover:border-zinc-700"
+                    href={pull.htmlUrl}
+                    key={pull.number}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <GitPullRequest size={17} className="text-emerald-300" />
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      #{pull.number} {pull.title}
+                    </span>
+                    <Badge tone={pull.state === "open" ? "info" : "neutral"}>{pull.state}</Badge>
+                  </a>
+                ))
+              ) : (
+                <p className="text-sm text-zinc-500">Pull Request가 없습니다.</p>
+              )}
+            </div>
+          </Card>
+          <Card className="p-5">
+            <h3 className="font-semibold">CI Checks</h3>
+            <div className="mt-4 grid gap-3">
+              {data?.checks.length ? (
+                data.checks.map((check) => (
+                  <div
+                    className="flex items-center justify-between rounded-lg border border-zinc-800 p-3"
+                    key={check.name}
+                  >
+                    <span className="text-sm">{check.name}</span>
+                    <Badge tone={check.conclusion === "success" ? "success" : "warning"}>
+                      {check.conclusion ?? check.status}
+                    </Badge>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-zinc-500">CI Check 결과가 없습니다.</p>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (project.status !== "PRD_LOCKED") {
+    return (
+      <EmptyState
+        icon={<GitBranch size={20} />}
+        title="Repository 연결 전"
+        description="최종 승인된 PRD를 잠근 뒤 기존 Repository를 연결하거나 새 Repository를 만들 수 있습니다."
+      />
+    );
+  }
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-2">
+      <Card className="p-5">
+        <h2 className="font-semibold">새 Repository 생성</h2>
+        <p className="mt-2 text-sm text-zinc-500">
+          GitHub App 또는 Fine-grained PAT의 승인 범위 안에서 생성하고 Factory 기준 파일을
+          초기화합니다.
+        </p>
+        <form
+          className="mt-5 grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            create.mutate(event.currentTarget);
+          }}
+        >
+          <label className="grid gap-2 text-sm">
+            Owner
+            <input className="factory-input" name="owner" required />
+          </label>
+          <label className="grid gap-2 text-sm">
+            Repository 이름
+            <input className="factory-input" name="name" required />
+          </label>
+          <label className="grid gap-2 text-sm">
+            설명
+            <textarea className="factory-input min-h-20" name="description" />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-2 text-sm">
+              Template owner
+              <input className="factory-input" name="templateOwner" />
+            </label>
+            <label className="grid gap-2 text-sm">
+              Template repository
+              <input className="factory-input" name="templateName" />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-zinc-400">
+            <input defaultChecked name="private" type="checkbox" /> Private Repository
+          </label>
+          <ErrorNotice error={create.error} />
+          <Button disabled={create.isPending} type="submit">
+            {create.isPending ? "생성 및 초기화 중…" : "Repository 생성 요청"}
+          </Button>
+        </form>
+      </Card>
+      <Card className="p-5">
+        <h2 className="font-semibold">기존 Repository 연결</h2>
+        <p className="mt-2 text-sm text-zinc-500">
+          설치된 GitHub App 또는 PAT가 조회할 수 있는 Repository만 연결할 수 있습니다.
+        </p>
+        <label className="mt-5 grid gap-2 text-sm">
+          Owner 조회
+          <input
+            className="factory-input"
+            onChange={(event) => setOwner(event.target.value.trim())}
+            placeholder="sandeul"
+            value={owner}
+          />
+        </label>
+        <ErrorNotice error={remote.error ?? connect.error} />
+        <div className="mt-4 grid max-h-96 gap-2 overflow-y-auto">
+          {remote.isFetching ? (
+            <p className="text-sm text-zinc-500">Repository 조회 중…</p>
+          ) : (
+            remote.data?.map((item) => (
+              <div
+                className="flex items-center gap-3 rounded-lg border border-zinc-800 p-3"
+                key={item.id}
+              >
+                <GitBranch size={16} className="text-zinc-500" />
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {item.owner}/{item.name}
+                </span>
+                <Button
+                  className="!min-h-8 !px-3 !py-1 !text-xs"
+                  disabled={connect.isPending}
+                  onClick={() => connect.mutate(item)}
+                >
+                  연결
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) {
+  const queryClient = useQueryClient();
+  const detail = useQuery({
+    queryKey: ["task", taskId],
+    queryFn: () => apiRequest<DevelopmentTaskDetail>(`/tasks/${taskId}`),
+    refetchInterval: 3_000,
+  });
+  const latestRun = detail.data?.runs[0];
+  useEffect(() => {
+    if (!latestRun || !["QUEUED", "STARTING", "RUNNING", "CANCELLING"].includes(latestRun.status)) {
+      return;
+    }
+    const base = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+    const source = new EventSource(`${base}/codex-runs/${latestRun.id}/events`);
+    source.onmessage = () => {
+      void queryClient.invalidateQueries({ queryKey: ["task", taskId] });
+      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    };
+    return () => source.close();
+  }, [latestRun, queryClient, taskId]);
+  const cancel = useMutation({
+    mutationFn: () =>
+      apiRequest(`/tasks/${taskId}/cancel`, {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["task", taskId] }),
+  });
+  const followUp = useMutation({
+    mutationFn: (instruction: string) =>
+      apiRequest(`/tasks/${taskId}/instructions`, {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+        body: JSON.stringify({ instruction }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["task", taskId] }),
+        queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+      ]);
+    },
+  });
+  if (detail.isPending) return <p className="text-sm text-zinc-500">작업 상세를 불러오는 중…</p>;
+  if (detail.error || !detail.data) return <ErrorNotice error={detail.error} />;
+  const data = detail.data;
+  const runEvents = latestRun
+    ? data.events.filter((event) => event.codexRunId === latestRun.id)
+    : [];
+  const active = ["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(data.status);
+  return (
+    <div className="grid gap-5">
+      <Card className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Badge>{data.type}</Badge>
+              <Badge tone={statusTone(data.status)}>{data.status}</Badge>
+            </div>
+            <h3 className="mt-3 text-lg font-semibold">{data.title}</h3>
+            <p className="mt-2 font-mono text-xs text-zinc-600">
+              Locked PRD {data.lockedPrdSha256}
+            </p>
+          </div>
+          {active ? (
+            <Button
+              className="!bg-red-950 !text-red-200 hover:!bg-red-900"
+              disabled={cancel.isPending}
+              onClick={() => cancel.mutate()}
+            >
+              작업 중단
+            </Button>
+          ) : null}
+        </div>
+        <ErrorNotice error={cancel.error} />
+      </Card>
+      <Card className="overflow-hidden">
+        <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
+          <div>
+            <h3 className="font-semibold">실행 로그</h3>
+            <p className="mt-1 text-xs text-zinc-500">SSE 실시간 이벤트 · JSONL 수집</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {active ? <span className="size-2 animate-pulse rounded-full bg-emerald-400" /> : null}
+            <Badge tone={statusTone(latestRun?.status ?? data.status)}>
+              {latestRun?.status ?? data.status}
+            </Badge>
+          </div>
+        </div>
+        <div className="max-h-96 overflow-y-auto bg-zinc-950 p-4 font-mono text-xs leading-6">
+          {runEvents.length ? (
+            runEvents.map((event) => (
+              <div className="grid grid-cols-[42px_1fr] gap-3" key={event.id}>
+                <span className="text-zinc-700">{String(event.sequence).padStart(3, "0")}</span>
+                <span className={event.level === "ERROR" ? "text-red-300" : "text-zinc-400"}>
+                  <span className="text-emerald-700">[{event.eventType}]</span> {event.message}
+                </span>
+              </div>
+            ))
+          ) : (
+            <span className="text-zinc-600">Worker 이벤트를 기다리는 중입니다.</span>
+          )}
+        </div>
+      </Card>
+      {latestRun?.finalMessage || latestRun?.errorMessage ? (
+        <Card className="p-5">
+          <h3 className="font-semibold">완료 보고</h3>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-zinc-400">
+            {latestRun.finalMessage ?? latestRun.errorMessage}
+          </p>
+          {latestRun.pullRequestUrl ? (
+            <a
+              className="mt-4 inline-flex items-center gap-2 text-sm text-emerald-300 hover:text-emerald-200"
+              href={latestRun.pullRequestUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <GitPullRequest size={16} /> Pull Request #{latestRun.pullRequestNumber} 열기
+            </a>
+          ) : null}
+        </Card>
+      ) : null}
+      {!active ? (
+        <Card className="p-5">
+          <h3 className="font-semibold">후속 지시 / 재작업 요청</h3>
+          <form
+            className="mt-4 grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const instruction = formString(new FormData(event.currentTarget), "instruction");
+              followUp.mutate(instruction);
+            }}
+          >
+            <textarea
+              className="factory-input min-h-28"
+              name="instruction"
+              placeholder="기존 지시를 덮어쓰지 않고 새 TaskInstructionVersion으로 저장됩니다."
+              required
+            />
+            <ErrorNotice error={followUp.error} />
+            <Button disabled={followUp.isPending} type="submit">
+              후속 지시 등록
+            </Button>
+          </form>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
+function TasksPanel({ project, auth }: { project: Project; auth: AuthState }) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<string | null>(null);
+  const tasks = useQuery({
+    queryKey: ["tasks", project.id],
+    queryFn: () => apiRequest<DevelopmentTask[]>(`/projects/${project.id}/tasks`),
+    refetchInterval: 4_000,
+  });
+  useEffect(() => {
+    if (!selected && tasks.data?.[0]) setSelected(tasks.data[0].id);
+  }, [selected, tasks.data]);
+  const create = useMutation({
+    mutationFn: (form: HTMLFormElement) => {
+      const data = new FormData(form);
+      const lines = (name: string) =>
+        formString(data, name)
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+      return apiRequest<DevelopmentTaskDetail>(`/projects/${project.id}/tasks`, {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+        body: JSON.stringify({
+          type: formString(data, "type"),
+          title: formString(data, "title"),
+          instruction: formString(data, "instruction"),
+          acceptanceCriteria: lines("acceptanceCriteria"),
+          targetRepositoryId: project.repository?.id,
+          targetBranch: formString(data, "targetBranch"),
+          allowedPaths: lines("allowedPaths"),
+          deniedPaths: lines("deniedPaths"),
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      });
+    },
+    onSuccess: async (task) => {
+      setSelected(task.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tasks", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project", project.id] }),
+      ]);
+    },
+  });
+  const canCreate =
+    Boolean(project.repository) &&
+    [
+      "REPO_READY",
+      "CODE_REVIEW",
+      "QA_TESTING",
+      "SECURITY_REVIEW",
+      "RELEASE_CANDIDATE",
+      "FINAL_APPROVAL",
+      "BUILT",
+    ].includes(project.status);
+  return (
+    <div className="grid gap-5 xl:grid-cols-[330px_1fr]">
+      <div className="grid content-start gap-5">
+        <Card className="overflow-hidden">
+          <div className="border-b border-zinc-800 px-4 py-3">
+            <h2 className="font-semibold">개발 작업</h2>
+          </div>
+          <div className="divide-y divide-zinc-800">
+            {tasks.data?.map((task) => (
+              <button
+                className={cn(
+                  "w-full p-4 text-left transition",
+                  selected === task.id ? "bg-zinc-800/70" : "hover:bg-zinc-800/30",
+                )}
+                key={task.id}
+                onClick={() => setSelected(task.id)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <Badge>{task.type}</Badge>
+                  <Badge tone={statusTone(task.status)}>{task.status}</Badge>
+                </div>
+                <p className="mt-3 truncate text-sm font-medium">{task.title}</p>
+                <time className="mt-2 block text-xs text-zinc-600">
+                  {formatSeoul(task.createdAt)}
+                </time>
+              </button>
+            ))}
+            {!tasks.data?.length ? (
+              <p className="p-5 text-sm text-zinc-500">등록된 작업이 없습니다.</p>
+            ) : null}
+          </div>
+        </Card>
+        {canCreate ? (
+          <Card className="p-4">
+            <h3 className="font-semibold">새 Codex 작업</h3>
+            <form
+              className="mt-4 grid gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                create.mutate(event.currentTarget);
+              }}
+            >
+              <select className="factory-input" defaultValue="IMPLEMENT_PRD" name="type">
+                <option value="IMPLEMENT_PRD">PRD 구현</option>
+                <option value="IMPLEMENT_FEATURE">기능 추가</option>
+                <option value="FIX_REVIEW">리뷰 수정</option>
+                <option value="FIX_TEST">테스트 수정</option>
+                <option value="FIX_SECURITY">보안 수정</option>
+                <option value="REFACTOR_APPROVED_SCOPE">승인 범위 Refactor</option>
+                <option value="BUILD_RELEASE_CANDIDATE">Release Candidate 빌드</option>
+                <option value="GENERATE_DOCUMENTATION">문서 생성</option>
+              </select>
+              <input className="factory-input" name="title" placeholder="작업 제목" required />
+              <textarea
+                className="factory-input min-h-24"
+                name="instruction"
+                placeholder="개발 지시"
+                required
+              />
+              <textarea
+                className="factory-input min-h-20"
+                name="acceptanceCriteria"
+                placeholder={"Acceptance Criteria — 한 줄에 하나\n로그인 성공"}
+                required
+              />
+              <input
+                className="factory-input"
+                defaultValue={project.repository?.defaultBranch ?? "main"}
+                name="targetBranch"
+                placeholder="대상 Branch"
+                required
+              />
+              <textarea
+                className="factory-input min-h-16"
+                name="allowedPaths"
+                placeholder={"허용 경로 — 선택\napp/**"}
+              />
+              <textarea
+                className="factory-input min-h-16"
+                name="deniedPaths"
+                placeholder={"금지 경로 — 선택\ninfra/**"}
+              />
+              <ErrorNotice error={create.error} />
+              <Button disabled={create.isPending} type="submit">
+                {create.isPending ? "대기열 등록 중…" : "Codex 작업 생성"}
+              </Button>
+            </form>
+          </Card>
+        ) : null}
+      </div>
+      {selected ? (
+        <TaskDetailPanel auth={auth} taskId={selected} />
+      ) : (
+        <EmptyState
+          icon={<TerminalSquare size={20} />}
+          title="개발 작업을 선택하세요"
+          description="잠긴 PRD와 Repository가 준비되면 승인 범위의 Codex 작업을 생성할 수 있습니다."
+        />
+      )}
+    </div>
+  );
+}
+
+function CodeChangesPanel({ projectId }: { projectId: string }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const tasks = useQuery({
+    queryKey: ["tasks", projectId],
+    queryFn: () => apiRequest<DevelopmentTask[]>(`/projects/${projectId}/tasks`),
+  });
+  useEffect(() => {
+    if (!selected && tasks.data?.[0]) setSelected(tasks.data[0].id);
+  }, [selected, tasks.data]);
+  const detail = useQuery({
+    queryKey: ["task", selected],
+    queryFn: () => apiRequest<DevelopmentTaskDetail>(`/tasks/${selected}`),
+    enabled: Boolean(selected),
+  });
+  const run = detail.data?.runs.find((item) => item.gitDiff);
+  return (
+    <div className="grid gap-5">
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <GitPullRequest size={18} className="text-emerald-300" />
+          <select
+            className="factory-input max-w-md"
+            onChange={(event) => setSelected(event.target.value)}
+            value={selected ?? ""}
+          >
+            {!selected ? <option value="">작업 선택</option> : null}
+            {tasks.data?.map((task) => (
+              <option key={task.id} value={task.id}>
+                {task.title} · {task.status}
+              </option>
+            ))}
+          </select>
+          {run?.pullRequestUrl ? (
+            <a
+              className="text-sm text-emerald-300 hover:text-emerald-200"
+              href={run.pullRequestUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              PR #{run.pullRequestNumber} 열기
+            </a>
+          ) : null}
+          {run?.commitSha ? <code className="text-xs text-zinc-600">{run.commitSha}</code> : null}
+        </div>
+      </Card>
+      {run?.gitDiff ? (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
+            <h2 className="font-semibold">Git diff</h2>
+            <Badge tone="info">검토 전</Badge>
+          </div>
+          <pre className="max-h-[680px] overflow-auto bg-zinc-950 p-5 text-xs leading-6 text-zinc-400">
+            {run.gitDiff}
+          </pre>
+        </Card>
+      ) : (
+        <EmptyState
+          icon={<RefreshCw size={20} />}
+          title="수집된 Git diff가 없습니다"
+          description="Codex 작업이 완료되면 Worker가 변경 경로를 검증하고 diff, Commit SHA, Pull Request를 저장합니다."
+        />
+      )}
+    </div>
+  );
+}
+
 function ProjectOverview({ project }: { project: Project }) {
   const cards = [
     ["PRD 버전", project.counts?.prdVersions ?? 0, FileText],
@@ -1045,6 +1716,13 @@ function ProjectWorkspace({
     content = <DecisionPanel projectId={projectId} auth={auth} kind="constraints" />;
   else if (tab === "의사결정 기록")
     content = <DecisionPanel projectId={projectId} auth={auth} kind="decisions" />;
+  else if (tab === "개발 작업")
+    content = data.repository ? (
+      <TasksPanel project={data} auth={auth} />
+    ) : (
+      <RepositoryPanel project={data} auth={auth} />
+    );
+  else if (tab === "코드 변경") content = <CodeChangesPanel projectId={projectId} />;
   else if (tab === "파일" || tab === "시장조사")
     content = <FilesPanel projectId={projectId} auth={auth} />;
   else if (tab === "활동 기록") content = <ActivityPanel projectId={projectId} />;

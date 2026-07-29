@@ -87,3 +87,75 @@ export interface DecisionRecord {
   status: string;
   createdAt: string;
 }
+
+export interface DevelopmentTask {
+  id: string;
+  projectId: string;
+  type: string;
+  title: string;
+  status: string;
+  targetBranch: string;
+  targetCommitSha?: string | null;
+  lockedPrdSha256: string;
+  acceptanceCriteria: string[];
+  allowedPaths: string[];
+  deniedPaths: string[];
+  cancellationRequestedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DevelopmentTaskDetail extends DevelopmentTask {
+  repository?: {
+    id: string;
+    owner: string;
+    name: string;
+    htmlUrl: string;
+    defaultBranch: string;
+  } | null;
+  instructions: Array<{
+    id: string;
+    versionNumber: number;
+    instruction: string;
+    instructionSha256: string;
+    createdAt: string;
+  }>;
+  runs: Array<{
+    id: string;
+    status: string;
+    adapter: string;
+    promptSha256?: string | null;
+    startedAt?: string | null;
+    finishedAt?: string | null;
+    finalMessage?: string | null;
+    gitDiff?: string | null;
+    commitSha?: string | null;
+    pullRequestNumber?: number | null;
+    pullRequestUrl?: string | null;
+    errorMessage?: string | null;
+    resultJson?: {
+      summary?: string;
+      changedFiles?: Array<{ path: string; reason: string }>;
+      tests?: Array<{ command: string; status: string; summary: string }>;
+      assumptions?: string[];
+      incompleteItems?: string[];
+    } | null;
+    createdAt: string;
+  }>;
+  events: Array<{
+    id: string;
+    codexRunId: string;
+    sequence: number;
+    eventType: string;
+    level: string;
+    message: string;
+    createdAt: string;
+  }>;
+  job?: {
+    id: string;
+    status: string;
+    attempts: number;
+    maxAttempts: number;
+    lastError?: string | null;
+  } | null;
+}

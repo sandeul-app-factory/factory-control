@@ -10,7 +10,8 @@
 - Phase 0 완료: 기준점, 구조 조사, Architecture, threat model
 - Phase 1 완료: monorepo, 인증, 감사 로그, DB/Redis/MinIO, 개발 Compose
 - Phase 2 완료: 프로젝트 상태 머신, Artifact/PRD/의사결정 API와 CEO Control Center
-- Phase 3 진행 예정
+- Phase 3 완료: GitHub App/PAT/Fake, Webhook, Task/Queue, Codex Worker, SSE, diff/PR
+- Phase 4 진행 예정
 
 ## Phase 0 — 분석 및 보존
 

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://factory.sandeul.work/schemas/codex/codex-result.schema.json",
+  "title": "Sandeul Factory Codex Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "summary",
+    "changedFiles",
+    "tests",
+    "assumptions",
+    "questions",
+    "incompleteItems",
+    "securityNotes"
+  ],
+  "properties": {
+    "status": {
+      "enum": ["SUCCEEDED", "FAILED", "BLOCKED"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "changedFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "reason"],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "status", "summary"],
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["PASSED", "FAILED", "NOT_RUN"]
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "incompleteItems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "securityNotes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

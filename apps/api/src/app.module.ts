@@ -10,6 +10,8 @@ import { ArtifactsModule } from "./artifacts/artifacts.module.js";
 import { DecisionsModule } from "./decisions/decisions.module.js";
 import { PrdModule } from "./prd/prd.module.js";
 import { ProjectsModule } from "./projects/projects.module.js";
+import { RepositoriesModule } from "./repositories/repositories.module.js";
+import { TasksModule } from "./tasks/tasks.module.js";
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { ProjectsModule } from "./projects/projects.module.js";
     ArtifactsModule,
     PrdModule,
     DecisionsModule,
+    RepositoriesModule,
+    TasksModule,
   ],
   controllers: [HealthController],
   providers: [

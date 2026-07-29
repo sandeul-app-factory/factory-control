@@ -13,7 +13,9 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/codex/package.json packages/codex/package.json
 COPY packages/database/package.json packages/database/package.json
+COPY packages/github/package.json packages/github/package.json
 COPY packages/security/package.json packages/security/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/ui/package.json packages/ui/package.json

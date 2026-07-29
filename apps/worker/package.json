@@ -11,9 +11,13 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@sandeul/codex": "workspace:*",
+    "@sandeul/contracts": "workspace:*",
     "@sandeul/database": "workspace:*",
-    "bullmq": "5.58.5",
-    "ioredis": "5.7.0"
+    "@sandeul/github": "workspace:*",
+    "@sandeul/security": "workspace:*",
+    "bullmq": "5.81.2",
+    "ioredis": "5.11.1"
   },
   "devDependencies": {
     "@types/node": "22.18.0",

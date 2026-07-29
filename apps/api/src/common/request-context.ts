@@ -13,4 +13,5 @@ export interface RequestAuth {
 export interface FactoryRequest extends Request {
   auth?: RequestAuth;
   requestId: string;
+  rawBody?: Buffer;
 }
