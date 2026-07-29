@@ -1,0 +1,36 @@
+{
+  "name": "sandeul-app-factory",
+  "version": "2.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint .",
+    "test": "turbo run test",
+    "test:e2e": "pnpm --filter @sandeul/web test:e2e",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @sandeul/database generate",
+    "db:migrate": "pnpm --filter @sandeul/database migrate",
+    "admin:create": "pnpm --filter @sandeul/database admin:create",
+    "security:baseline": "pnpm audit --audit-level high && pnpm secrets:scan",
+    "secrets:scan": "node infra/scripts/secret-scan.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@types/node": "22.18.0",
+    "eslint": "9.39.2",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "16.3.0",
+    "prettier": "3.6.2",
+    "turbo": "2.5.6",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.41.0"
+  }
+}

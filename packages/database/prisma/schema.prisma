@@ -1,0 +1,755 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CEO
+  PM
+  DEVELOPER
+  REVIEWER
+  SECURITY_REVIEWER
+  READ_ONLY
+}
+
+enum AccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ProjectStatus {
+  IDEA
+  RESEARCHING
+  PRD_DRAFT
+  PRD_REVIEW
+  REVISION_REQUIRED
+  PRD_APPROVED
+  PRD_LOCKED
+  REPO_BOOTSTRAPPING
+  REPO_READY
+  DEVELOPMENT_QUEUED
+  DEVELOPING
+  CODE_REVIEW
+  QA_TESTING
+  SECURITY_REVIEW
+  RELEASE_CANDIDATE
+  FINAL_APPROVAL
+  SIGNED
+  BUILT
+  RELEASED
+  REJECTED
+  ARCHIVED
+}
+
+enum ArtifactKind {
+  RESEARCH
+  PRD
+  UX
+  SECURITY
+  SOURCE_SNAPSHOT
+  CODEX_RESULT
+  TEST_REPORT
+  SECURITY_REPORT
+  SBOM
+  APK
+  AAB
+  BUILD_LOG
+  OTHER
+}
+
+enum ArtifactStatus {
+  ACTIVE
+  QUARANTINED
+  DELETED
+}
+
+enum PrdStatus {
+  DRAFT
+  IN_REVIEW
+  REVISION_REQUIRED
+  APPROVED
+  LOCKED
+  SUPERSEDED
+  REJECTED
+}
+
+enum ApprovalAction {
+  APPROVE
+  CONDITIONAL_APPROVE
+  REQUEST_REVISION
+  REJECT
+  HOLD
+  ADD_FEATURE
+  EXCLUDE_FEATURE
+  CHANGE_PRIORITY
+  CHANGE_TARGET_USER
+  CHANGE_REVENUE_MODEL
+  ADD_TECHNICAL_CONSTRAINT
+  ADD_SECURITY_CONSTRAINT
+  CHANGE_RELEASE_SCOPE
+  ACCEPT_RISK
+}
+
+enum Priority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum GithubAuthMode {
+  APP
+  FINE_GRAINED_PAT
+  FAKE
+}
+
+enum TaskType {
+  REPO_BOOTSTRAP
+  IMPLEMENT_PRD
+  IMPLEMENT_FEATURE
+  FIX_REVIEW
+  FIX_TEST
+  FIX_SECURITY
+  REFACTOR_APPROVED_SCOPE
+  BUILD_RELEASE_CANDIDATE
+  GENERATE_DOCUMENTATION
+}
+
+enum TaskStatus {
+  DRAFT
+  QUEUED
+  RUNNING
+  CANCEL_REQUESTED
+  CANCELLED
+  SUCCEEDED
+  FAILED
+  TIMED_OUT
+  DEAD_LETTER
+}
+
+enum CodexRunStatus {
+  QUEUED
+  STARTING
+  RUNNING
+  CANCELLING
+  CANCELLED
+  SUCCEEDED
+  FAILED
+  TIMED_OUT
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  RETRYING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  DEAD_LETTER
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  PASSED
+  FAILED
+  CANCELLED
+}
+
+enum SecuritySeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum FindingStatus {
+  OPEN
+  FIXED
+  FALSE_POSITIVE
+  RISK_ACCEPTED
+}
+
+enum BuildStatus {
+  QUEUED
+  BUILDING
+  SUCCEEDED
+  FAILED
+}
+
+enum ReleaseStatus {
+  DRAFT
+  GATE_BLOCKED
+  CANDIDATE
+  APPROVED
+  SIGNING
+  SIGNED
+  RELEASED
+  REJECTED
+}
+
+model User {
+  id                 String        @id @default(uuid()) @db.Uuid
+  loginId            String        @unique @db.VarChar(100)
+  email              String        @unique @db.VarChar(320)
+  passwordHash       String
+  role               Role          @default(CEO)
+  status             AccountStatus @default(ACTIVE)
+  failedLoginCount   Int           @default(0)
+  lockedUntil        DateTime?
+  passwordChangedAt  DateTime      @default(now())
+  lastLoginAt        DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deletedAt          DateTime?
+  version            Int           @default(1)
+  sessions           Session[]
+
+  @@index([status, deletedAt])
+}
+
+model Session {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  tokenHash   String   @unique @db.Char(64)
+  csrfToken   String   @db.VarChar(128)
+  ipHash      String?  @db.Char(64)
+  userAgent   String?  @db.VarChar(500)
+  expiresAt   DateTime
+  lastSeenAt  DateTime @default(now())
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  version     Int      @default(1)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Project {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @db.VarChar(120)
+  slug        String        @unique @db.VarChar(80)
+  summary     String        @default("")
+  status      ProjectStatus @default(IDEA)
+  createdBy   String        @db.Uuid
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  version     Int           @default(1)
+
+  @@index([status, deletedAt, updatedAt])
+}
+
+model ProjectStateHistory {
+  id               String        @id @default(uuid()) @db.Uuid
+  projectId        String        @db.Uuid
+  previousStatus   ProjectStatus
+  newStatus        ProjectStatus
+  actorId          String        @db.Uuid
+  reason           String
+  artifactId       String?       @db.Uuid
+  decisionRecordId String?       @db.Uuid
+  taskId           String?       @db.Uuid
+  requestId        String        @db.VarChar(100)
+  createdAt        DateTime      @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Artifact {
+  id            String         @id @default(uuid()) @db.Uuid
+  projectId     String         @db.Uuid
+  kind          ArtifactKind
+  logicalFolder String         @db.VarChar(100)
+  name          String         @db.VarChar(500)
+  status        ArtifactStatus @default(ACTIVE)
+  createdBy     String         @db.Uuid
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
+  version       Int            @default(1)
+  versions      ArtifactVersion[]
+
+  @@index([projectId, logicalFolder, status])
+}
+
+model ArtifactVersion {
+  id            String   @id @default(uuid()) @db.Uuid
+  artifactId    String   @db.Uuid
+  versionNumber Int
+  objectKey     String   @unique @db.VarChar(1000)
+  sha256        String   @db.Char(64)
+  originalName  String   @db.VarChar(500)
+  mimeType      String   @db.VarChar(200)
+  extension     String   @db.VarChar(30)
+  sizeBytes     BigInt
+  metadata      Json?
+  createdBy     String   @db.Uuid
+  createdAt     DateTime @default(now())
+  artifact      Artifact @relation(fields: [artifactId], references: [id], onDelete: Restrict)
+
+  @@unique([artifactId, versionNumber])
+  @@index([sha256])
+}
+
+model PrdVersion {
+  id                     String     @id @default(uuid()) @db.Uuid
+  projectId              String     @db.Uuid
+  versionNumber          Int
+  status                 PrdStatus  @default(DRAFT)
+  canonicalFormat        String     @db.VarChar(20)
+  contentMarkdown        String?
+  contentJson            Json?
+  sha256                 String     @db.Char(64)
+  sourceArtifactVersionId String?   @db.Uuid
+  acceptanceCriteria     Json
+  includedArtifactIds    Json
+  excludedScope          Json
+  approvedBy             String?    @db.Uuid
+  approvedAt             DateTime?
+  lockedBy               String?    @db.Uuid
+  lockedAt               DateTime?
+  createdBy              String     @db.Uuid
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+  deletedAt              DateTime?
+  version                Int        @default(1)
+  sections               PrdSection[]
+  comments               PrdComment[]
+
+  @@unique([projectId, versionNumber])
+  @@index([projectId, status, createdAt])
+}
+
+model PrdSection {
+  id            String     @id @default(uuid()) @db.Uuid
+  prdVersionId  String     @db.Uuid
+  heading       String     @db.VarChar(500)
+  anchor        String     @db.VarChar(200)
+  ordinal       Int
+  content       String
+  contentSha256 String     @db.Char(64)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  version       Int        @default(1)
+  prdVersion    PrdVersion @relation(fields: [prdVersionId], references: [id], onDelete: Cascade)
+  comments      PrdComment[]
+
+  @@unique([prdVersionId, anchor])
+}
+
+model PrdComment {
+  id            String      @id @default(uuid()) @db.Uuid
+  projectId     String      @db.Uuid
+  prdVersionId  String      @db.Uuid
+  sectionId     String?     @db.Uuid
+  body          String
+  anchorStart   Int?
+  anchorEnd     Int?
+  status        String      @default("OPEN") @db.VarChar(30)
+  createdBy     String      @db.Uuid
+  resolvedBy    String?     @db.Uuid
+  resolvedAt    DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+  version       Int         @default(1)
+  prdVersion    PrdVersion  @relation(fields: [prdVersionId], references: [id], onDelete: Cascade)
+  section       PrdSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+
+  @@index([prdVersionId, status, createdAt])
+}
+
+model CeoConstraint {
+  id                   String   @id @default(uuid()) @db.Uuid
+  projectId            String   @db.Uuid
+  logicalId            String   @db.Uuid
+  versionNumber        Int
+  title                String   @db.VarChar(300)
+  detail               String
+  scope                String
+  priority             Priority @default(MEDIUM)
+  mandatory            Boolean  @default(true)
+  appliesPrdVersionId  String?  @db.Uuid
+  appliesTaskId        String?  @db.Uuid
+  effectiveAt          DateTime?
+  reason               String
+  status               String   @default("ACTIVE") @db.VarChar(30)
+  createdBy            String   @db.Uuid
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  deletedAt            DateTime?
+  version              Int      @default(1)
+
+  @@unique([logicalId, versionNumber])
+  @@index([projectId, status, createdAt])
+}
+
+model DecisionRecord {
+  id                   String         @id @default(uuid()) @db.Uuid
+  projectId            String         @db.Uuid
+  logicalId            String         @db.Uuid
+  versionNumber        Int
+  action               ApprovalAction?
+  title                String         @db.VarChar(300)
+  detail               String
+  scope                String
+  priority             Priority       @default(MEDIUM)
+  mandatory            Boolean        @default(true)
+  appliesPrdVersionId  String?        @db.Uuid
+  appliesTaskId        String?        @db.Uuid
+  effectiveAt          DateTime?
+  reason               String
+  status               String         @default("ACTIVE") @db.VarChar(30)
+  createdBy            String         @db.Uuid
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  deletedAt            DateTime?
+  version              Int            @default(1)
+
+  @@unique([logicalId, versionNumber])
+  @@index([projectId, status, createdAt])
+}
+
+model Approval {
+  id                   String         @id @default(uuid()) @db.Uuid
+  projectId            String         @db.Uuid
+  prdVersionId         String?        @db.Uuid
+  developmentTaskId    String?        @db.Uuid
+  releaseId            String?        @db.Uuid
+  action               ApprovalAction
+  title                String         @db.VarChar(300)
+  detail               String
+  scope                String
+  priority             Priority
+  mandatory            Boolean
+  effectiveAt          DateTime?
+  reason               String
+  createdBy            String         @db.Uuid
+  createdAt            DateTime       @default(now())
+  version              Int            @default(1)
+
+  @@index([projectId, createdAt])
+}
+
+model GithubRepository {
+  id                String         @id @default(uuid()) @db.Uuid
+  projectId         String         @unique @db.Uuid
+  externalId        String         @unique @db.VarChar(200)
+  owner             String         @db.VarChar(100)
+  name              String         @db.VarChar(100)
+  htmlUrl           String         @db.VarChar(1000)
+  defaultBranch     String         @db.VarChar(255)
+  authMode          GithubAuthMode
+  installationId    String?        @db.VarChar(200)
+  lastSyncedAt      DateTime?
+  status            String         @default("CONNECTED") @db.VarChar(30)
+  createdBy         String         @db.Uuid
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+  version           Int            @default(1)
+}
+
+model WebhookDelivery {
+  id           String   @id @default(uuid()) @db.Uuid
+  deliveryId   String   @unique @db.VarChar(200)
+  eventName    String   @db.VarChar(100)
+  signature    String?  @db.VarChar(200)
+  payloadSha256 String  @db.Char(64)
+  processedAt  DateTime?
+  status       String   @default("RECEIVED") @db.VarChar(30)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([eventName, createdAt])
+}
+
+model DevelopmentTask {
+  id                    String     @id @default(uuid()) @db.Uuid
+  projectId             String     @db.Uuid
+  type                  TaskType
+  title                 String     @db.VarChar(300)
+  status                TaskStatus @default(DRAFT)
+  targetRepositoryId    String?    @db.Uuid
+  targetBranch          String     @db.VarChar(255)
+  targetCommitSha       String?    @db.Char(40)
+  lockedPrdVersionId    String     @db.Uuid
+  lockedPrdSha256       String     @db.Char(64)
+  acceptanceCriteria    Json
+  allowedPaths          Json
+  deniedPaths           Json
+  idempotencyKey        String     @unique @db.VarChar(200)
+  currentInstructionId  String?    @db.Uuid
+  cancellationRequestedAt DateTime?
+  createdBy             String     @db.Uuid
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  deletedAt             DateTime?
+  version               Int        @default(1)
+
+  @@index([projectId, status, createdAt])
+}
+
+model TaskInstructionVersion {
+  id               String   @id @default(uuid()) @db.Uuid
+  developmentTaskId String  @db.Uuid
+  versionNumber    Int
+  instruction      String
+  instructionSha256 String  @db.Char(64)
+  createdBy        String   @db.Uuid
+  createdAt        DateTime @default(now())
+
+  @@unique([developmentTaskId, versionNumber])
+}
+
+model CodexRun {
+  id                    String         @id @default(uuid()) @db.Uuid
+  developmentTaskId     String         @db.Uuid
+  instructionVersionId  String         @db.Uuid
+  status                CodexRunStatus @default(QUEUED)
+  adapter               String         @db.VarChar(30)
+  promptSha256          String?        @db.Char(64)
+  workspacePath         String?        @db.VarChar(1000)
+  startedAt             DateTime?
+  finishedAt            DateTime?
+  exitCode              Int?
+  resultJson            Json?
+  finalMessage          String?
+  gitDiff               String?
+  commitSha             String?        @db.Char(40)
+  pullRequestNumber     Int?
+  pullRequestUrl        String?        @db.VarChar(1000)
+  errorCode             String?        @db.VarChar(100)
+  errorMessage          String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  version               Int            @default(1)
+
+  @@index([developmentTaskId, createdAt])
+}
+
+model CodexRunEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  codexRunId  String   @db.Uuid
+  sequence    Int
+  eventType   String   @db.VarChar(100)
+  level       String   @default("INFO") @db.VarChar(20)
+  message     String
+  payload     Json?
+  createdAt   DateTime @default(now())
+
+  @@unique([codexRunId, sequence])
+  @@index([codexRunId, createdAt])
+}
+
+model Job {
+  id              String    @id @default(uuid()) @db.Uuid
+  developmentTaskId String? @db.Uuid
+  externalJobId   String?   @unique @db.VarChar(200)
+  queueName       String    @db.VarChar(100)
+  type            String    @db.VarChar(100)
+  status          JobStatus @default(QUEUED)
+  idempotencyKey  String    @unique @db.VarChar(200)
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(3)
+  lastError       String?
+  nextAttemptAt   DateTime?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  version         Int       @default(1)
+
+  @@index([queueName, status, createdAt])
+}
+
+model TestRun {
+  id               String    @id @default(uuid()) @db.Uuid
+  projectId        String    @db.Uuid
+  developmentTaskId String?  @db.Uuid
+  codexRunId       String?   @db.Uuid
+  commitSha        String    @db.Char(40)
+  status           RunStatus @default(PENDING)
+  command          String    @db.VarChar(500)
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  summary          Json?
+  reportArtifactId String?   @db.Uuid
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  results          TestResult[]
+
+  @@index([projectId, status, createdAt])
+}
+
+model TestResult {
+  id          String   @id @default(uuid()) @db.Uuid
+  testRunId   String   @db.Uuid
+  suite       String   @db.VarChar(500)
+  name        String   @db.VarChar(1000)
+  status      String   @db.VarChar(30)
+  durationMs  Int?
+  message     String?
+  createdAt   DateTime @default(now())
+  testRun     TestRun  @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+
+  @@index([testRunId, status])
+}
+
+model SecurityScan {
+  id               String    @id @default(uuid()) @db.Uuid
+  projectId        String    @db.Uuid
+  developmentTaskId String?  @db.Uuid
+  commitSha        String    @db.Char(40)
+  scanner          String    @db.VarChar(100)
+  status           RunStatus @default(PENDING)
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  summary          Json?
+  sbomArtifactId   String?   @db.Uuid
+  reportArtifactId String?   @db.Uuid
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  findings         SecurityFinding[]
+
+  @@index([projectId, status, createdAt])
+}
+
+model SecurityFinding {
+  id                String           @id @default(uuid()) @db.Uuid
+  securityScanId    String           @db.Uuid
+  fingerprint       String           @db.VarChar(300)
+  severity          SecuritySeverity
+  status            FindingStatus    @default(OPEN)
+  ruleId            String           @db.VarChar(200)
+  title             String           @db.VarChar(1000)
+  description       String
+  filePath          String?          @db.VarChar(1000)
+  line              Int?
+  remediation       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  version           Int              @default(1)
+  securityScan      SecurityScan     @relation(fields: [securityScanId], references: [id], onDelete: Cascade)
+
+  @@unique([securityScanId, fingerprint])
+  @@index([severity, status])
+}
+
+model RiskAcceptance {
+  id                 String   @id @default(uuid()) @db.Uuid
+  projectId          String   @db.Uuid
+  securityFindingId  String   @db.Uuid
+  reason             String
+  expiresAt          DateTime?
+  acceptedBy         String   @db.Uuid
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  revokedAt          DateTime?
+  version            Int      @default(1)
+
+  @@index([projectId, securityFindingId, revokedAt])
+}
+
+model Build {
+  id                    String      @id @default(uuid()) @db.Uuid
+  projectId             String      @db.Uuid
+  developmentTaskId     String?     @db.Uuid
+  commitSha             String      @db.Char(40)
+  prdSha256             String      @db.Char(64)
+  status                BuildStatus @default(QUEUED)
+  buildType             String      @db.VarChar(100)
+  signed                Boolean     @default(false)
+  artifactVersionId     String?     @db.Uuid
+  artifactSha256        String?     @db.Char(64)
+  startedAt             DateTime?
+  finishedAt            DateTime?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  version               Int         @default(1)
+
+  @@index([projectId, status, createdAt])
+}
+
+model Release {
+  id                   String        @id @default(uuid()) @db.Uuid
+  projectId            String        @db.Uuid
+  buildId              String        @db.Uuid
+  status               ReleaseStatus @default(DRAFT)
+  commitSha            String        @db.Char(40)
+  prdVersionId         String        @db.Uuid
+  prdSha256            String        @db.Char(64)
+  testRunId            String        @db.Uuid
+  securityScanId       String        @db.Uuid
+  gateReport           Json?
+  approvedBy           String?       @db.Uuid
+  approvedAt           DateTime?
+  releasedAt           DateTime?
+  createdBy            String        @db.Uuid
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  deletedAt            DateTime?
+  version              Int           @default(1)
+
+  @@index([projectId, status, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorId     String?  @db.Uuid
+  actorRole   String?  @db.VarChar(50)
+  action      String   @db.VarChar(150)
+  resourceType String  @db.VarChar(100)
+  resourceId  String?  @db.VarChar(200)
+  projectId   String?  @db.Uuid
+  requestId   String   @db.VarChar(100)
+  ipHash      String?  @db.Char(64)
+  userAgent   String?  @db.VarChar(500)
+  outcome     String   @db.VarChar(30)
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+}
+
+model McpCredential {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(200)
+  tokenHash   String   @unique @db.Char(64)
+  scopes      Json
+  rateLimit   Int      @default(30)
+  status      String   @default("ACTIVE") @db.VarChar(30)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdBy   String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  revokedAt   DateTime?
+  version     Int      @default(1)
+}
+
+model IdempotencyRecord {
+  id              String   @id @default(uuid()) @db.Uuid
+  key             String   @unique @db.VarChar(200)
+  actorId         String?  @db.Uuid
+  operation       String   @db.VarChar(100)
+  requestHash     String   @db.Char(64)
+  responseStatus  Int?
+  responseBody    Json?
+  lockedUntil     DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([operation, expiresAt])
+}
