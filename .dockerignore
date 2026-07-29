@@ -4,6 +4,7 @@ node_modules/
 .next
 **/.next
 **/dist
+**/*.tsbuildinfo
 **/node_modules
 **/node_modules/**
 coverage
