@@ -1,3 +1,5 @@
+import { androidBuildReadyPrdJsonSchema } from "@sandeul/contracts";
+
 export interface McpToolDefinition {
   name: string;
   title: string;
@@ -23,8 +25,30 @@ const objectSchema = (
 
 const projectId = { type: "string", format: "uuid", description: "Factory Project UUID" };
 const uuid = { type: "string", format: "uuid" };
+const prdContentSchema = {
+  oneOf: [
+    {
+      type: "string",
+      description: "factory.get_prd_schema가 반환한 모든 필수 제목을 포함하는 Build-ready Markdown",
+    },
+    androidBuildReadyPrdJsonSchema,
+  ],
+};
 
 export const mcpTools: readonly McpToolDefinition[] = [
+  {
+    name: "factory.get_prd_schema",
+    title: "Android Build-ready PRD 규격 조회",
+    description:
+      "PRD 작성 전에 반드시 호출합니다. Factory가 검증하는 최신 Android PRD JSON Schema, 고정 담당자, Markdown 템플릿과 작성 절차를 반환합니다.",
+    inputSchema: objectSchema({}, []),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
   {
     name: "factory.list_projects",
     title: "프로젝트 목록",
@@ -76,7 +100,7 @@ export const mcpTools: readonly McpToolDefinition[] = [
   {
     name: "factory.read_artifact",
     title: "Artifact 읽기",
-    description: "ArtifactVersion metadata와 60초 동안 유효한 다운로드 URL을 반환합니다.",
+    description: "ArtifactVersion metadata와 제한 시간 다운로드 URL을 반환합니다.",
     inputSchema: objectSchema({ artifactVersionId: uuid }, ["artifactVersionId"]),
     annotations: {
       readOnlyHint: true,
@@ -106,18 +130,18 @@ export const mcpTools: readonly McpToolDefinition[] = [
   },
   {
     name: "factory.upload_prd",
-    title: "PRD 업로드",
-    description: "Markdown 또는 PRD Schema JSON을 새 Canonical PRD 버전으로 업로드합니다.",
+    title: "Build-ready PRD 업로드",
+    description:
+      "factory.get_prd_schema를 먼저 호출해 규격을 확인한 뒤 담당자가 산들·수빈으로 고정된 완전한 Canonical PRD를 업로드합니다. 승인·잠금·개발 시작은 하지 않습니다.",
     inputSchema: objectSchema(
       {
         projectId,
         format: { enum: ["MARKDOWN", "JSON"] },
-        content: {
-          description: "MARKDOWN 문자열 또는 PRD Schema JSON object",
-        },
+        content: prdContentSchema,
         acceptanceCriteria: {
           type: "array",
           items: { type: "string", minLength: 1, maxLength: 2000 },
+          description: "MARKDOWN 형식에서만 별도로 전달합니다. JSON에서는 본문에서 추출합니다.",
         },
         includedArtifactIds: { type: "array", items: uuid },
         excludedScope: { type: "array", items: { type: "string", maxLength: 2000 } },
@@ -133,13 +157,14 @@ export const mcpTools: readonly McpToolDefinition[] = [
   },
   {
     name: "factory.create_prd_version",
-    title: "PRD 버전 생성",
-    description: "기존 버전을 덮어쓰지 않고 새 Canonical PRD 버전을 생성합니다.",
+    title: "Build-ready PRD 새 버전 생성",
+    description:
+      "기존 버전을 덮어쓰지 않고 factory.get_prd_schema의 최신 규격을 통과하는 새 Canonical PRD 버전을 생성합니다.",
     inputSchema: objectSchema(
       {
         projectId,
         format: { enum: ["MARKDOWN", "JSON"] },
-        content: {},
+        content: prdContentSchema,
         acceptanceCriteria: { type: "array", items: { type: "string" } },
         includedArtifactIds: { type: "array", items: uuid },
         excludedScope: { type: "array", items: { type: "string" } },
@@ -156,7 +181,7 @@ export const mcpTools: readonly McpToolDefinition[] = [
   {
     name: "factory.record_ceo_constraint",
     title: "CEO Constraint 기록",
-    description: "덮어쓰지 않는 CEO Constraint의 새 논리 기록을 생성합니다.",
+    description: "덮어쓰지 않는 CEO Constraint 논리 기록을 생성합니다.",
     inputSchema: objectSchema(
       {
         projectId,
@@ -182,7 +207,7 @@ export const mcpTools: readonly McpToolDefinition[] = [
   {
     name: "factory.record_decision",
     title: "Decision Record 기록",
-    description: "덮어쓰지 않는 Decision Record의 새 논리 기록을 생성합니다.",
+    description: "덮어쓰지 않는 CEO Decision Record 논리 기록을 생성합니다.",
     inputSchema: objectSchema(
       {
         projectId,

@@ -1,0 +1,1376 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "android-build-ready/v1"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "documentVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "owners": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "산들"
+            },
+            {
+              "type": "string",
+              "const": "수빈"
+            }
+          ]
+        },
+        "productType": {
+          "type": "string",
+          "const": "ANDROID_APP"
+        },
+        "status": {
+          "type": "string",
+          "const": "DRAFT"
+        },
+        "lastUpdatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "targetRelease": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "title",
+        "documentVersion",
+        "owners",
+        "productType",
+        "status",
+        "lastUpdatedAt",
+        "targetRelease"
+      ],
+      "additionalProperties": false
+    },
+    "product": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "problem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        "valueProposition": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 3000
+        },
+        "targetUsers": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^USR-[0-9]{3}$"
+              },
+              "segment": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "need": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "usageContext": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": ["id", "segment", "need", "usageContext"],
+            "additionalProperties": false
+          }
+        },
+        "goals": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Z]{2,5}-[0-9]{3}$"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "metric": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "required": ["id", "description", "metric", "target"],
+            "additionalProperties": false
+          }
+        },
+        "nonGoals": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "revenueModel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "successMetrics": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "problem",
+        "valueProposition",
+        "targetUsers",
+        "goals",
+        "nonGoals",
+        "revenueModel",
+        "successMetrics"
+      ],
+      "additionalProperties": false
+    },
+    "releaseScope": {
+      "type": "object",
+      "properties": {
+        "mustHave": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Z]{2,5}-[0-9]{3}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 3000
+              },
+              "priority": {
+                "type": "string",
+                "enum": ["MUST", "SHOULD", "COULD"]
+              }
+            },
+            "required": ["id", "name", "description", "priority"],
+            "additionalProperties": false
+          }
+        },
+        "shouldHave": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Z]{2,5}-[0-9]{3}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 3000
+              },
+              "priority": {
+                "type": "string",
+                "enum": ["MUST", "SHOULD", "COULD"]
+              }
+            },
+            "required": ["id", "name", "description", "priority"],
+            "additionalProperties": false
+          }
+        },
+        "outOfScope": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "futureScope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "required": ["mustHave", "shouldHave", "outOfScope", "futureScope"],
+      "additionalProperties": false
+    },
+    "userJourneys": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^UJ-[0-9]{3}$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "actor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "preconditions": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "steps": {
+            "minItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "successOutcome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "failureScenarios": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "actor",
+          "preconditions",
+          "steps",
+          "successOutcome",
+          "failureScenarios"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "screens": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^SCR-[0-9]{3}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "route": {
+            "type": "string",
+            "pattern": "^\\/[A-Za-z0-9_{}?&=./-]*$"
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "entryConditions": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "components": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "actions": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500
+            }
+          },
+          "states": {
+            "minItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["INITIAL", "LOADING", "CONTENT", "EMPTY", "ERROR", "OFFLINE"]
+            }
+          },
+          "errorHandling": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500
+            }
+          },
+          "accessibility": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "nextScreens": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^SCR-[0-9]{3}$"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "route",
+          "purpose",
+          "entryConditions",
+          "components",
+          "actions",
+          "states",
+          "errorHandling",
+          "accessibility",
+          "nextScreens"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "functionalRequirements": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Z]{2,5}-[0-9]{3}$"
+          },
+          "featureId": {
+            "type": "string",
+            "pattern": "^[A-Z]{2,5}-[0-9]{3}$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 3000
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "businessRules": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "outputs": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "errors": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500
+            }
+          },
+          "screenIds": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^SCR-[0-9]{3}$"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "featureId",
+          "title",
+          "description",
+          "inputs",
+          "businessRules",
+          "outputs",
+          "errors",
+          "screenIds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Za-z0-9]{1,99}$"
+              },
+              "purpose": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "fields": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][A-Za-z0-9]{0,99}$"
+                    },
+                    "type": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "sensitive": {
+                      "type": "boolean"
+                    },
+                    "validation": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    }
+                  },
+                  "required": ["name", "type", "required", "sensitive", "validation"],
+                  "additionalProperties": false
+                }
+              },
+              "localPersistence": {
+                "type": "boolean"
+              },
+              "retention": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": ["name", "purpose", "fields", "localPersistence", "retention"],
+            "additionalProperties": false
+          }
+        },
+        "localStorage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "remoteSync": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "migrationPolicy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "deletionPolicy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "offlinePolicy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "entities",
+        "localStorage",
+        "remoteSync",
+        "migrationPolicy",
+        "deletionPolicy",
+        "offlinePolicy"
+      ],
+      "additionalProperties": false
+    },
+    "api": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "baseUrlPolicy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "authentication": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "endpoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^API-[0-9]{3}$"
+              },
+              "method": {
+                "type": "string",
+                "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 500,
+                "pattern": "^\\/.*"
+              },
+              "purpose": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "authentication": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "requestExample": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "responseExample": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "errorCodes": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 120000
+              },
+              "retryPolicy": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "id",
+              "method",
+              "path",
+              "purpose",
+              "authentication",
+              "requestExample",
+              "responseExample",
+              "errorCodes",
+              "timeoutMs",
+              "retryPolicy"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unavailableBackendStrategy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "required",
+        "baseUrlPolicy",
+        "authentication",
+        "endpoints",
+        "unavailableBackendStrategy"
+      ],
+      "additionalProperties": false
+    },
+    "android": {
+      "type": "object",
+      "properties": {
+        "applicationId": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){2,}$"
+        },
+        "appName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "minSdk": {
+          "type": "integer",
+          "minimum": 23,
+          "maximum": 36
+        },
+        "targetSdk": {
+          "type": "integer",
+          "minimum": 36,
+          "maximum": 9007199254740991
+        },
+        "compileSdk": {
+          "type": "integer",
+          "minimum": 36,
+          "maximum": 9007199254740991
+        },
+        "versionCode": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "versionName": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+        },
+        "javaToolchain": {
+          "type": "number",
+          "const": 17
+        },
+        "language": {
+          "type": "string",
+          "const": "KOTLIN"
+        },
+        "uiFramework": {
+          "type": "string",
+          "const": "JETPACK_COMPOSE"
+        },
+        "architecture": {
+          "type": "string",
+          "enum": ["CLEAN_MVVM", "MVI"]
+        },
+        "dependencyInjection": {
+          "type": "string",
+          "enum": ["HILT", "KOIN", "NONE"]
+        },
+        "persistence": {
+          "type": "string",
+          "enum": ["ROOM", "DATASTORE", "NONE"]
+        },
+        "networkClient": {
+          "type": "string",
+          "enum": ["KOTLINX_HTTP", "RETROFIT_OKHTTP", "NONE"]
+        },
+        "modules": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "orientations": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["PORTRAIT", "LANDSCAPE"]
+          }
+        },
+        "locales": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z]{2}(?:-[A-Z]{2})?$"
+          }
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["LIGHT", "DARK", "SYSTEM"]
+        }
+      },
+      "required": [
+        "applicationId",
+        "appName",
+        "minSdk",
+        "targetSdk",
+        "compileSdk",
+        "versionCode",
+        "versionName",
+        "javaToolchain",
+        "language",
+        "uiFramework",
+        "architecture",
+        "dependencyInjection",
+        "persistence",
+        "networkClient",
+        "modules",
+        "orientations",
+        "locales",
+        "theme"
+      ],
+      "additionalProperties": false
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^android\\.permission\\.[A-Z0-9_]+$"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "requestMoment": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "denialBehavior": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": ["name", "required", "purpose", "requestMoment", "denialBehavior"],
+        "additionalProperties": false
+      }
+    },
+    "security": {
+      "type": "object",
+      "properties": {
+        "dataClassification": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "secretsPolicy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "networkSecurity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "exportedComponents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "backupAllowed": {
+          "type": "boolean"
+        },
+        "releaseDebuggable": {
+          "type": "boolean",
+          "const": false
+        },
+        "screenshotsAllowed": {
+          "type": "boolean"
+        },
+        "webView": {
+          "type": "object",
+          "properties": {
+            "used": {
+              "type": "boolean"
+            },
+            "javascriptEnabled": {
+              "type": "boolean"
+            },
+            "allowedOrigins": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "fileAccessAllowed": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": ["used", "javascriptEnabled", "allowedOrigins", "fileAccessAllowed"],
+          "additionalProperties": false
+        },
+        "tlsValidationBypassAllowed": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "dataClassification",
+        "secretsPolicy",
+        "networkSecurity",
+        "exportedComponents",
+        "backupAllowed",
+        "releaseDebuggable",
+        "screenshotsAllowed",
+        "webView",
+        "tlsValidationBypassAllowed"
+      ],
+      "additionalProperties": false
+    },
+    "privacy": {
+      "type": "object",
+      "properties": {
+        "personalData": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "consentFlow": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "retention": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "deletion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "privacyPolicyRequired": {
+          "type": "boolean"
+        }
+      },
+      "required": ["personalData", "consentFlow", "retention", "deletion", "privacyPolicyRequired"],
+      "additionalProperties": false
+    },
+    "design": {
+      "type": "object",
+      "properties": {
+        "designSystem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "colors": {
+          "minItems": 2,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "typography": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "iconArtifactIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "imageArtifactIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "missingAssetPolicy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "designSystem",
+        "colors",
+        "typography",
+        "iconArtifactIds",
+        "imageArtifactIds",
+        "missingAssetPolicy"
+      ],
+      "additionalProperties": false
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "analyticsEvents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "crashReporting": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "loggingPolicy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "sensitiveFieldsExcluded": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        }
+      },
+      "required": ["analyticsEvents", "crashReporting", "loggingPolicy", "sensitiveFieldsExcluded"],
+      "additionalProperties": false
+    },
+    "build": {
+      "type": "object",
+      "properties": {
+        "variants": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["debug", "release"]
+          }
+        },
+        "artifactTypes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["APK", "AAB"]
+          }
+        },
+        "commands": {
+          "type": "object",
+          "properties": {
+            "unitTest": {
+              "type": "string",
+              "const": "./gradlew test"
+            },
+            "lint": {
+              "type": "string",
+              "const": "./gradlew lint"
+            },
+            "staticAnalysis": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["./gradlew detekt", "./gradlew ktlintCheck"]
+              }
+            },
+            "debugApk": {
+              "type": "string",
+              "const": "./gradlew assembleDebug"
+            },
+            "releaseBundle": {
+              "type": "string",
+              "const": "./gradlew bundleRelease"
+            }
+          },
+          "required": ["unitTest", "lint", "staticAnalysis", "debugApk", "releaseBundle"],
+          "additionalProperties": false
+        },
+        "signing": {
+          "type": "string",
+          "const": "UNSIGNED_OR_DEBUG_ONLY"
+        },
+        "reproducibility": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": ["variants", "artifactTypes", "commands", "signing", "reproducibility"],
+      "additionalProperties": false
+    },
+    "testPlan": {
+      "type": "object",
+      "properties": {
+        "unit": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1500
+          }
+        },
+        "ui": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1500
+          }
+        },
+        "integration": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1500
+          }
+        },
+        "accessibility": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1500
+          }
+        },
+        "offlineAndRecovery": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1500
+          }
+        },
+        "deviceMatrix": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        }
+      },
+      "required": [
+        "unit",
+        "ui",
+        "integration",
+        "accessibility",
+        "offlineAndRecovery",
+        "deviceMatrix"
+      ],
+      "additionalProperties": false
+    },
+    "acceptanceCriteria": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^AC-[0-9]{3}$"
+          },
+          "requirementIds": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z]{2,5}-[0-9]{3}$"
+            }
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "given": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "when": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "then": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 3000
+          },
+          "verification": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "mandatory": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "requirementIds",
+          "title",
+          "given",
+          "when",
+          "then",
+          "verification",
+          "mandatory"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "releaseGates": {
+      "type": "object",
+      "properties": {
+        "allTestsPass": {
+          "type": "boolean",
+          "const": true
+        },
+        "acceptanceCriteriaMet": {
+          "type": "boolean",
+          "const": true
+        },
+        "criticalFindingsAllowed": {
+          "type": "number",
+          "const": 0
+        },
+        "highFindingsAllowed": {
+          "type": "number",
+          "const": 0
+        },
+        "sbomRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "installSmokeTestRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "artifactSha256Required": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "allTestsPass",
+        "acceptanceCriteriaMet",
+        "criticalFindingsAllowed",
+        "highFindingsAllowed",
+        "sbomRequired",
+        "installSmokeTestRequired",
+        "artifactSha256Required"
+      ],
+      "additionalProperties": false
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    },
+    "risks": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^RSK-[0-9]{3}$"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["PRODUCT", "TECHNICAL", "SECURITY", "PRIVACY", "OPERATION", "STORE"]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "impact": {
+            "type": "string",
+            "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+          },
+          "mitigation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": ["id", "category", "description", "impact", "mitigation"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "metadata",
+    "product",
+    "releaseScope",
+    "userJourneys",
+    "screens",
+    "functionalRequirements",
+    "data",
+    "api",
+    "android",
+    "permissions",
+    "security",
+    "privacy",
+    "design",
+    "observability",
+    "build",
+    "testPlan",
+    "acceptanceCriteria",
+    "releaseGates",
+    "assumptions",
+    "openQuestions",
+    "risks"
+  ],
+  "additionalProperties": false
+}

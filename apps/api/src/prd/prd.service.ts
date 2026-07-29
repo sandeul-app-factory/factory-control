@@ -5,7 +5,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, prisma } from "@sandeul/database";
-import { approvalInputSchema, createCommentSchema, prdJsonSchema } from "@sandeul/contracts";
+import {
+  approvalInputSchema,
+  createCommentSchema,
+  flattenPrdAcceptanceCriteria,
+  prdJsonSchema,
+} from "@sandeul/contracts";
 import type { FactoryRequest, RequestAuth } from "../common/request-context.js";
 import { AuditService } from "../audit/audit.service.js";
 import { ArtifactsService } from "../artifacts/artifacts.service.js";
@@ -15,6 +20,7 @@ import {
   latestByLogicalId,
   markdownSections,
   parseStringArray,
+  validateBuildReadyMarkdown,
 } from "./prd-content.js";
 
 interface UploadPrdInput {
@@ -80,13 +86,15 @@ export class PrdService {
       }
       canonicalFormat = "JSON";
       contentJson = parsed.data as Prisma.InputJsonValue;
-      acceptanceCriteria = parsed.data.acceptanceCriteria;
+      acceptanceCriteria = flattenPrdAcceptanceCriteria(parsed.data);
+      input.excludedScope ??= JSON.stringify(parsed.data.releaseScope.outOfScope);
       sections = jsonSections(parsed.data);
     } else {
       canonicalFormat = "MARKDOWN";
       contentMarkdown = file.buffer.toString("utf8").replace(/^\uFEFF/, "");
       if (!contentMarkdown.trim())
         throw new BadRequestException("빈 Markdown PRD는 업로드할 수 없습니다.");
+      validateBuildReadyMarkdown(contentMarkdown);
       if (!acceptanceCriteria.length) {
         throw new BadRequestException("Markdown PRD에는 Acceptance Criteria 배열이 필요합니다.");
       }
@@ -285,11 +293,15 @@ export class PrdService {
       reason: parsed.data.reason,
       metadata: { action: parsed.data.action, prdVersionId: prd.id },
     });
+    if (parsed.data.action === "APPROVE") {
+      await this.lock(prd.id, actor, request);
+    }
     return approval;
   }
 
   async lock(prdVersionId: string, actor: RequestAuth, request: FactoryRequest) {
     const prd = await this.get(prdVersionId);
+    if (prd.status === "LOCKED") return prd;
     if (prd.status !== "APPROVED" || !prd.approvedAt || !prd.approvedBy) {
       throw new ConflictException("최종 승인된 PRD만 잠글 수 있습니다.");
     }

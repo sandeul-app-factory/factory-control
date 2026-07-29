@@ -8,6 +8,18 @@ import {
   securitySeverities,
   taskTypes,
 } from "./enums.js";
+export {
+  androidBuildReadyPrdJsonSchema,
+  androidBuildReadyPrdMarkdownTemplate,
+  androidBuildReadyPrdSchema,
+  androidBuildReadyPrdSchemaVersion,
+  fixedProductOwners,
+  flattenPrdAcceptanceCriteria,
+  prdJsonSchema,
+  requiredBuildReadyMarkdownHeadings,
+  type AndroidBuildReadyPrd,
+  type PrdJson,
+} from "./prd.js";
 
 const uuid = z.uuid();
 const nonEmpty = z.string().trim().min(1);
@@ -55,18 +67,6 @@ export const transitionProjectSchema = z.object({
   decisionRecordId: uuid.optional(),
   taskId: uuid.optional(),
   expectedVersion: z.number().int().positive(),
-});
-
-export const prdJsonSchema = z.object({
-  title: nonEmpty.max(200),
-  summary: nonEmpty.max(5000),
-  targetUsers: z.array(nonEmpty.max(300)).min(1),
-  problem: nonEmpty.max(10000),
-  goals: z.array(nonEmpty.max(1000)).min(1),
-  nonGoals: z.array(nonEmpty.max(1000)).default([]),
-  scope: z.array(nonEmpty.max(2000)).min(1),
-  acceptanceCriteria: z.array(nonEmpty.max(2000)).min(1),
-  risks: z.array(nonEmpty.max(2000)).default([]),
 });
 
 export const createCommentSchema = z.object({
@@ -224,7 +224,6 @@ export const releaseApprovalSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type TransitionProjectInput = z.infer<typeof transitionProjectSchema>;
-export type PrdJson = z.infer<typeof prdJsonSchema>;
 export type DecisionInput = z.infer<typeof decisionInputSchema>;
 export type TaskInput = z.infer<typeof taskInputSchema>;
 export type TestRunReportInput = z.infer<typeof testRunReportSchema>;

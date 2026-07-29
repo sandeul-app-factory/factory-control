@@ -29,6 +29,16 @@ export class TasksController {
     return this.tasks.create(projectId, body, actor, request);
   }
 
+  @Roles("CEO")
+  @Post("tasks/:taskId/start")
+  start(
+    @Param("taskId") taskId: string,
+    @CurrentAuth() actor: RequestAuth,
+    @CurrentRequest() request: FactoryRequest,
+  ) {
+    return this.tasks.start(taskId, actor, request);
+  }
+
   @Roles("CEO", "DEVELOPER")
   @Post("tasks/:taskId/instructions")
   followUp(

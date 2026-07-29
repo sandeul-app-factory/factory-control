@@ -1,4 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
+import { requiredBuildReadyMarkdownHeadings } from "@sandeul/contracts";
 import { sha256 } from "@sandeul/security";
 
 export interface PrdSectionInput {
@@ -68,6 +69,33 @@ export function jsonSections(document: Record<string, unknown>): PrdSectionInput
       contentSha256: sha256(content),
     };
   });
+}
+
+export function validateBuildReadyMarkdown(markdown: string): void {
+  const headings = new Set(
+    [...markdown.matchAll(/^#{1,6}\s+(.+)$/gm)].map((match) => match[1]?.trim().toLowerCase()),
+  );
+  const missing = requiredBuildReadyMarkdownHeadings.filter(
+    (required) => !headings.has(required.toLowerCase()),
+  );
+  if (missing.length) {
+    throw new BadRequestException({
+      message: "Build-ready Markdown PRD 필수 섹션이 누락되었습니다.",
+      missingHeadings: missing,
+    });
+  }
+  if (!/담당자\s*:\s*산들\s*,\s*수빈/.test(markdown)) {
+    throw new BadRequestException("PRD 담당자는 '산들, 수빈'으로 고정해야 합니다.");
+  }
+  if (!/targetSdk\s*:\s*(?:3[6-9]|[4-9][0-9])\b/i.test(markdown)) {
+    throw new BadRequestException("Android targetSdk는 36 이상이어야 합니다.");
+  }
+  if (!/compileSdk\s*:\s*(?:3[6-9]|[4-9][0-9])\b/i.test(markdown)) {
+    throw new BadRequestException("Android compileSdk는 36 이상이어야 합니다.");
+  }
+  if (!/release debuggable\s*:\s*false/i.test(markdown)) {
+    throw new BadRequestException("Release build는 debuggable=false여야 합니다.");
+  }
 }
 
 export function latestByLogicalId<T extends { logicalId: string }>(records: T[]): T[] {

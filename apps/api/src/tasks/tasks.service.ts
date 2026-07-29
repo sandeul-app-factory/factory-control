@@ -168,7 +168,7 @@ export class TasksService implements OnModuleDestroy {
           projectId,
           type: parsed.data.type,
           title: parsed.data.title,
-          status: "QUEUED",
+          status: "DRAFT",
           targetRepositoryId: repository.id,
           targetBranch: parsed.data.targetBranch,
           targetCommitSha: parsed.data.targetCommitSha ?? null,
@@ -194,10 +194,111 @@ export class TasksService implements OnModuleDestroy {
         where: { id: task.id },
         data: { currentInstructionId: instruction.id },
       });
+      return task;
+    });
+    await this.audit.record({
+      actor,
+      action: "CODEX_TASK_CREATE",
+      resourceType: "DevelopmentTask",
+      resourceId: created.id,
+      projectId,
+      requestId: request.requestId,
+      outcome: "SUCCESS",
+      metadata: {
+        type: created.type,
+        status: created.status,
+        lockedPrdSha256: created.lockedPrdSha256,
+        targetRepositoryId: repository.id,
+      },
+    });
+    return this.get(created.id);
+  }
+
+  async prepareFromLockedPrd(
+    projectId: string,
+    actor: RequestAuth,
+    request: FactoryRequest,
+    targetRepositoryId?: string,
+  ) {
+    const [project, lockedPrd, repository] = await Promise.all([
+      prisma.project.findFirst({ where: { id: projectId, deletedAt: null } }),
+      prisma.prdVersion.findFirst({
+        where: { projectId, status: "LOCKED", deletedAt: null },
+        orderBy: { versionNumber: "desc" },
+      }),
+      targetRepositoryId
+        ? prisma.githubRepository.findFirst({
+            where: { id: targetRepositoryId, projectId, deletedAt: null },
+          })
+        : prisma.githubRepository.findFirst({ where: { projectId, deletedAt: null } }),
+    ]);
+    if (!project) throw new NotFoundException("프로젝트를 찾을 수 없습니다.");
+    if (!lockedPrd) throw new ConflictException("잠긴 PRD가 없습니다.");
+    if (!repository) {
+      return { prepared: false, reason: "REPOSITORY_REQUIRED" as const, task: null };
+    }
+    const idempotencyKey = `locked-prd:${lockedPrd.id}:implement`;
+    const existing = await prisma.developmentTask.findUnique({ where: { idempotencyKey } });
+    if (existing) {
+      return {
+        prepared: true,
+        reason: "ALREADY_PREPARED" as const,
+        task: await this.get(existing.id),
+      };
+    }
+    const acceptanceCriteria = Array.isArray(lockedPrd.acceptanceCriteria)
+      ? lockedPrd.acceptanceCriteria.filter((item): item is string => typeof item === "string")
+      : [];
+    if (!acceptanceCriteria.length) {
+      throw new ConflictException("잠긴 PRD에 Acceptance Criteria가 없습니다.");
+    }
+    const task = await this.create(
+      projectId,
+      {
+        type: "IMPLEMENT_PRD",
+        title: `${project.name} v${lockedPrd.versionNumber} 개발`,
+        instruction:
+          "잠긴 PRD 전체 범위와 Acceptance Criteria를 구현합니다. 요구사항을 임의 확장하지 말고, 개발 완료 후 독립 테스트·보안검사·Release Candidate 빌드 단계가 실행될 수 있는 상태로 보고합니다.",
+        acceptanceCriteria,
+        targetRepositoryId: repository.id,
+        targetBranch: repository.defaultBranch,
+        allowedPaths: [],
+        deniedPaths: ["infra/signing/**"],
+        idempotencyKey,
+      },
+      actor,
+      request,
+    );
+    return { prepared: true, reason: "CREATED" as const, task };
+  }
+
+  async start(taskId: string, actor: RequestAuth, request: FactoryRequest) {
+    const task = await prisma.developmentTask.findFirst({
+      where: { id: taskId, deletedAt: null },
+    });
+    if (!task) throw new NotFoundException("개발 작업을 찾을 수 없습니다.");
+    if (task.status !== "DRAFT") {
+      throw new ConflictException("DRAFT 상태의 개발 작업만 시작할 수 있습니다.");
+    }
+    if (!task.currentInstructionId) {
+      throw new ConflictException("실행할 TaskInstructionVersion이 없습니다.");
+    }
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: task.projectId } });
+    if (project.status !== "REPO_READY") {
+      throw new ConflictException("Repository 준비가 완료된 프로젝트만 개발을 시작할 수 있습니다.");
+    }
+    const created = await prisma.$transaction(async (transaction) => {
+      const claimed = await transaction.developmentTask.updateMany({
+        where: { id: task.id, status: "DRAFT" },
+        data: { status: "QUEUED", version: { increment: 1 } },
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException("다른 요청이 이미 이 작업을 시작했습니다.");
+      }
       const run = await transaction.codexRun.create({
         data: {
           developmentTaskId: task.id,
-          instructionVersionId: instruction.id,
+          instructionVersionId: task.currentInstructionId!,
           adapter: (process.env.CODEX_ADAPTER ?? "fake").toLowerCase(),
         },
       });
@@ -206,7 +307,7 @@ export class TasksService implements OnModuleDestroy {
           codexRunId: run.id,
           sequence: 1,
           eventType: "run.queued",
-          message: "Codex 작업이 대기열에 등록되었습니다.",
+          message: "CEO 시작 승인으로 Codex 작업이 대기열에 등록되었습니다.",
         },
       });
       const job = await transaction.job.create({
@@ -214,36 +315,32 @@ export class TasksService implements OnModuleDestroy {
           developmentTaskId: task.id,
           queueName: process.env.CODEX_QUEUE_NAME ?? "codex-tasks",
           type: "CODEX_EXECUTION",
-          idempotencyKey: `codex:${parsed.data.idempotencyKey}:1`,
+          idempotencyKey: `codex:${task.idempotencyKey}:1`,
           maxAttempts: Number(process.env.CODEX_JOB_MAX_ATTEMPTS ?? 3),
         },
       });
-      return { task, run, job };
+      return { run, job };
     });
-    await this.enqueue(created.task.id, created.run.id, created.job.id);
+    await this.enqueue(task.id, created.run.id, created.job.id);
     await this.projects.transitionSystem(
-      projectId,
+      task.projectId,
       "DEVELOPMENT_QUEUED",
-      `Codex 작업 대기열 등록: ${created.task.title}`,
+      `CEO가 개발 시작: ${task.title}`,
       actor,
       request,
-      { taskId: created.task.id },
+      { taskId: task.id },
     );
     await this.audit.record({
       actor,
-      action: "CODEX_TASK_CREATE",
+      action: "CODEX_TASK_START",
       resourceType: "DevelopmentTask",
-      resourceId: created.task.id,
-      projectId,
+      resourceId: task.id,
+      projectId: task.projectId,
       requestId: request.requestId,
       outcome: "SUCCESS",
-      metadata: {
-        type: created.task.type,
-        lockedPrdSha256: created.task.lockedPrdSha256,
-        targetRepositoryId: repository.id,
-      },
+      metadata: { codexRunId: created.run.id, jobId: created.job.id },
     });
-    return this.get(created.task.id);
+    return this.get(task.id);
   }
 
   async followUp(
@@ -263,6 +360,9 @@ export class TasksService implements OnModuleDestroy {
       where: { id: taskId, deletedAt: null },
     });
     if (!task) throw new NotFoundException("개발 작업을 찾을 수 없습니다.");
+    if (task.status === "DRAFT") {
+      throw new ConflictException("DRAFT 작업은 CEO의 개발 시작 액션으로만 실행할 수 있습니다.");
+    }
     if (["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(task.status)) {
       throw new ConflictException("실행 중인 작업에는 새 지시 버전을 만들 수 없습니다.");
     }

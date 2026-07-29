@@ -10,6 +10,12 @@ import {
 } from "@nestjs/common";
 import { Readable } from "node:stream";
 import { z } from "zod";
+import {
+  androidBuildReadyPrdJsonSchema,
+  androidBuildReadyPrdMarkdownTemplate,
+  androidBuildReadyPrdSchemaVersion,
+  fixedProductOwners,
+} from "@sandeul/contracts";
 import { prisma } from "@sandeul/database";
 import { isAllowedOrigin, sha256 } from "@sandeul/security";
 import type { FactoryRequest, RequestAuth } from "../common/request-context.js";
@@ -334,6 +340,23 @@ export class McpService {
     request: FactoryRequest,
   ): Promise<unknown> {
     const args = recordSchema.parse(rawArguments);
+    if (name === "factory.get_prd_schema") {
+      return {
+        schemaVersion: androidBuildReadyPrdSchemaVersion,
+        formatRecommendation: "JSON",
+        owners: fixedProductOwners,
+        workflow: [
+          "프로젝트를 조회하거나 생성한다.",
+          "이 Schema를 완전히 충족하는 PRD를 작성한다.",
+          "미결정 사항을 숨기지 말고 openQuestions에 기록한다.",
+          "factory.upload_prd 또는 factory.create_prd_version으로 업로드한다.",
+          "반환된 versionNumber와 sha256을 사용자에게 보고한다.",
+          "사용자가 검토 요청까지 지시한 경우에만 factory.request_prd_review를 호출한다.",
+        ],
+        jsonSchema: androidBuildReadyPrdJsonSchema,
+        markdownTemplate: androidBuildReadyPrdMarkdownTemplate,
+      };
+    }
     if (name === "factory.list_projects") return this.projects.list();
     if (name === "factory.get_project") {
       return this.projects.get(uuidSchema.parse(args.projectId));

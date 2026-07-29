@@ -16,6 +16,7 @@ import { sha256 } from "@sandeul/security";
 import type { FactoryRequest, RequestAuth } from "../common/request-context.js";
 import { AuditService } from "../audit/audit.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
+import { TasksService } from "../tasks/tasks.service.js";
 
 interface CreateRepositoryBody {
   owner?: unknown;
@@ -33,6 +34,7 @@ export class RepositoriesService {
   constructor(
     private readonly projects: ProjectsService,
     private readonly audit: AuditService,
+    private readonly tasks: TasksService,
   ) {}
 
   listOrganizations() {
@@ -101,7 +103,13 @@ export class RepositoriesService {
       outcome: "SUCCESS",
       metadata: { owner: remote.owner, name: remote.name, authMode: this.github.mode },
     });
-    return repository;
+    const development = await this.tasks.prepareFromLockedPrd(
+      projectId,
+      actor,
+      request,
+      repository.id,
+    );
+    return { ...repository, development };
   }
 
   async create(
@@ -187,7 +195,13 @@ export class RepositoriesService {
         outcome: "SUCCESS",
         metadata: { owner: remote.owner, name: remote.name, templateOwner, templateName },
       });
-      return repository;
+      const development = await this.tasks.prepareFromLockedPrd(
+        projectId,
+        actor,
+        request,
+        repository.id,
+      );
+      return { ...repository, development };
     } catch (error) {
       await this.projects.transitionSystem(
         projectId,

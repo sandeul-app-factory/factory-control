@@ -1302,6 +1302,19 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["task", taskId] }),
   });
+  const start = useMutation({
+    mutationFn: () =>
+      apiRequest(`/tasks/${taskId}/start`, {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["task", taskId] }),
+        queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+      ]);
+    },
+  });
   const followUp = useMutation({
     mutationFn: (instruction: string) =>
       apiRequest(`/tasks/${taskId}/instructions`, {
@@ -1337,7 +1350,11 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
               Locked PRD {data.lockedPrdSha256}
             </p>
           </div>
-          {active ? (
+          {data.status === "DRAFT" ? (
+            <Button disabled={start.isPending} onClick={() => start.mutate()}>
+              {start.isPending ? "개발 시작 처리 중…" : "개발 시작"}
+            </Button>
+          ) : active ? (
             <Button
               className="!bg-red-950 !text-red-200 hover:!bg-red-900"
               disabled={cancel.isPending}
@@ -1347,7 +1364,7 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
             </Button>
           ) : null}
         </div>
-        <ErrorNotice error={cancel.error} />
+        <ErrorNotice error={start.error ?? cancel.error} />
       </Card>
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
@@ -1395,7 +1412,7 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
           ) : null}
         </Card>
       ) : null}
-      {!active ? (
+      {!active && data.status !== "DRAFT" ? (
         <Card className="p-5">
           <h3 className="font-semibold">후속 지시 / 재작업 요청</h3>
           <form

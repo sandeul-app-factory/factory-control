@@ -4,6 +4,7 @@ import { mcpTools } from "./tools.js";
 describe("MCP tool exposure", () => {
   it("exposes only the approved domain allowlist", () => {
     expect(mcpTools.map((tool) => tool.name)).toEqual([
+      "factory.get_prd_schema",
       "factory.list_projects",
       "factory.get_project",
       "factory.get_project_status",
