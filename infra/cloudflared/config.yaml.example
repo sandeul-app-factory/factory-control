@@ -1,11 +1,13 @@
-# Copy only after reviewing the existing server configuration.
-# Never overwrite an existing /etc/cloudflared/config.yaml automatically.
-tunnel: EXISTING_TUNNEL_ID
-credentials-file: /etc/cloudflared/EXISTING_TUNNEL_ID.json
+# Reviewable ingress mirror for the existing, remotely-managed Sandeul_tunnel_v1 tunnel.
+# Keep credentials outside the repository and mount them read-only.
+# Do not merge this file into or overwrite the boss-guild-event tunnel configuration.
+# Apply equivalent ingress rules in Cloudflare; remote configuration is authoritative.
+tunnel: 0bcebddc-8c98-4921-ae4e-50f681bdfb2b
+credentials-file: /etc/cloudflared/credentials/0bcebddc-8c98-4921-ae4e-50f681bdfb2b.json
 
 ingress:
   - hostname: factory.sandeul.work
-    service: http://127.0.0.1:8080
+    service: http://host.docker.internal:8080
     originRequest:
       connectTimeout: 10s
       noHappyEyeballs: false

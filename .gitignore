@@ -10,6 +10,9 @@ test-results/
 .env
 .env.*
 !.env.example
+infra/cloudflared/config.yaml
+infra/cloudflared/*.json
+infra/cloudflared/credentials/
 *.log
 *.pid
 *.local
