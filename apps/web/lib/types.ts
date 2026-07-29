@@ -159,3 +159,87 @@ export interface DevelopmentTaskDetail extends DevelopmentTask {
     lastError?: string | null;
   } | null;
 }
+
+export interface TestRun {
+  id: string;
+  projectId: string;
+  commitSha: string;
+  status: string;
+  command: string;
+  summary?: {
+    total?: number;
+    passed?: number;
+    failed?: number;
+    skipped?: number;
+    acceptanceCriteriaMet?: boolean;
+    note?: string;
+  } | null;
+  reportArtifactId?: string | null;
+  createdAt: string;
+  results: Array<{
+    id: string;
+    suite: string;
+    name: string;
+    status: string;
+    durationMs?: number | null;
+    message?: string | null;
+  }>;
+}
+
+export interface SecurityScan {
+  id: string;
+  projectId: string;
+  commitSha: string;
+  scanner: string;
+  status: string;
+  sbomArtifactId?: string | null;
+  reportArtifactId?: string | null;
+  createdAt: string;
+  findings: Array<{
+    id: string;
+    severity: string;
+    status: string;
+    ruleId: string;
+    title: string;
+    description: string;
+    filePath?: string | null;
+    line?: number | null;
+    remediation?: string | null;
+    riskAcceptance?: {
+      id: string;
+      reason: string;
+      expiresAt?: string | null;
+      createdAt: string;
+    } | null;
+  }>;
+}
+
+export interface FactoryBuild {
+  id: string;
+  projectId: string;
+  commitSha: string;
+  prdSha256: string;
+  status: string;
+  buildType: string;
+  signed: boolean;
+  artifactVersionId?: string | null;
+  artifactSha256?: string | null;
+  createdAt: string;
+}
+
+export interface FactoryRelease {
+  id: string;
+  projectId: string;
+  buildId: string;
+  status: string;
+  commitSha: string;
+  prdSha256: string;
+  testRunId: string;
+  securityScanId: string;
+  gateReport?: {
+    passed?: boolean;
+    blockers?: string[];
+  } | null;
+  approvedAt?: string | null;
+  createdAt: string;
+}

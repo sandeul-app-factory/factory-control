@@ -9,6 +9,12 @@ import { FactoryExceptionFilter } from "./common/http-exception.filter.js";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
+  const express = app.getHttpAdapter().getInstance() as {
+    set(name: string, value: (key: string, item: unknown) => unknown): void;
+  };
+  express.set("json replacer", (_key, value) =>
+    typeof value === "bigint" ? value.toString() : value,
+  );
   app.useLogger(new Logger("FactoryAPI"));
   app.setGlobalPrefix("api");
   app.use(cookieParser());

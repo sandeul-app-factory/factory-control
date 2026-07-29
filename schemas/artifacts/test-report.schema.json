@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://factory.sandeul.work/schemas/artifacts/test-report.schema.json",
+  "title": "Factory Test Run Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commitSha", "status", "command", "summary", "results"],
+  "properties": {
+    "commitSha": { "type": "string", "pattern": "^[0-9a-fA-F]{40}$" },
+    "status": { "enum": ["PASSED", "FAILED", "CANCELLED"] },
+    "command": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "summary": {
+      "type": "object",
+      "required": ["total", "passed", "failed", "skipped", "acceptanceCriteriaMet"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "acceptanceCriteriaMet": { "type": "boolean" }
+      }
+    },
+    "results": { "type": "array", "maxItems": 10000 }
+  }
+}

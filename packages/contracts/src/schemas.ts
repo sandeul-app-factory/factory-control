@@ -127,9 +127,106 @@ export const riskAcceptanceInputSchema = z.object({
   expiresAt: z.iso.datetime().optional(),
 });
 
+const commitSha = z.string().regex(/^[0-9a-f]{40}$/i);
+const completedRunStatus = z.enum(["PASSED", "FAILED", "CANCELLED"]);
+
+export const testRunReportSchema = z.object({
+  commitSha,
+  developmentTaskId: uuid.optional(),
+  codexRunId: uuid.optional(),
+  status: completedRunStatus,
+  command: nonEmpty.max(500),
+  startedAt: z.iso.datetime().optional(),
+  finishedAt: z.iso.datetime().optional(),
+  summary: z
+    .object({
+      total: z.number().int().nonnegative(),
+      passed: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
+      skipped: z.number().int().nonnegative().default(0),
+      acceptanceCriteriaMet: z.boolean(),
+    })
+    .refine((value) => value.passed + value.failed + value.skipped === value.total, {
+      message: "테스트 합계가 일치하지 않습니다.",
+    }),
+  reportArtifactId: uuid.optional(),
+  results: z
+    .array(
+      z.object({
+        suite: nonEmpty.max(500),
+        name: nonEmpty.max(1000),
+        status: z.enum(["PASSED", "FAILED", "SKIPPED"]),
+        durationMs: z.number().int().nonnegative().optional(),
+        message: z.string().max(20000).optional(),
+      }),
+    )
+    .max(10000),
+});
+
+export const securityScanReportSchema = z.object({
+  commitSha,
+  developmentTaskId: uuid.optional(),
+  scanner: z.enum([
+    "OSV",
+    "SEMGREP",
+    "GITLEAKS",
+    "TRIVY_FS",
+    "TRIVY_IMAGE",
+    "ANDROID_LINT",
+    "DETEKT",
+    "KTLINT",
+    "DEPENDENCY_SCAN",
+    "MOBSF",
+    "ANDROID_MANIFEST",
+    "COMPOSITE",
+  ]),
+  status: completedRunStatus,
+  startedAt: z.iso.datetime().optional(),
+  finishedAt: z.iso.datetime().optional(),
+  sbomArtifactId: uuid.optional(),
+  reportArtifactId: uuid.optional(),
+  findings: z
+    .array(
+      z.object({
+        fingerprint: nonEmpty.max(300),
+        severity: securitySeveritySchema,
+        ruleId: nonEmpty.max(200),
+        title: nonEmpty.max(1000),
+        description: nonEmpty.max(20000),
+        filePath: z.string().trim().max(1000).optional(),
+        line: z.number().int().positive().optional(),
+        remediation: z.string().trim().max(20000).optional(),
+      }),
+    )
+    .max(10000),
+});
+
+export const buildReportSchema = z.object({
+  commitSha,
+  developmentTaskId: uuid.optional(),
+  status: z.enum(["SUCCEEDED", "FAILED"]),
+  buildType: z.enum(["UNSIGNED_RELEASE", "DEBUG", "SIGNED_RELEASE"]),
+  artifactVersionId: uuid.optional(),
+  startedAt: z.iso.datetime().optional(),
+  finishedAt: z.iso.datetime().optional(),
+});
+
+export const releaseCandidateSchema = z.object({
+  buildId: uuid,
+  testRunId: uuid,
+  securityScanId: uuid,
+});
+
+export const releaseApprovalSchema = z.object({
+  reason: nonEmpty.max(10000),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type TransitionProjectInput = z.infer<typeof transitionProjectSchema>;
 export type PrdJson = z.infer<typeof prdJsonSchema>;
 export type DecisionInput = z.infer<typeof decisionInputSchema>;
 export type TaskInput = z.infer<typeof taskInputSchema>;
+export type TestRunReportInput = z.infer<typeof testRunReportSchema>;
+export type SecurityScanReportInput = z.infer<typeof securityScanReportSchema>;
+export type BuildReportInput = z.infer<typeof buildReportSchema>;

@@ -12,6 +12,7 @@ import { PrdModule } from "./prd/prd.module.js";
 import { ProjectsModule } from "./projects/projects.module.js";
 import { RepositoriesModule } from "./repositories/repositories.module.js";
 import { TasksModule } from "./tasks/tasks.module.js";
+import { QualityModule } from "./quality/quality.module.js";
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { TasksModule } from "./tasks/tasks.module.js";
     DecisionsModule,
     RepositoriesModule,
     TasksModule,
+    QualityModule,
   ],
   controllers: [HealthController],
   providers: [

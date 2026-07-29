@@ -33,6 +33,7 @@
     "db:migrate": "pnpm --filter @sandeul/database migrate",
     "admin:create": "pnpm --filter @sandeul/database admin:create",
     "security:baseline": "pnpm audit --audit-level high && pnpm secrets:scan",
+    "security:full": "node infra/scripts/security-toolchain.mjs",
     "secrets:scan": "node infra/scripts/secret-scan.mjs"
   },
   "devDependencies": {

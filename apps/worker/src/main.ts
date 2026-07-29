@@ -360,6 +360,7 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
       workBranch,
       repository.defaultBranch,
     );
+    const reportedTests = output.result.tests;
     await prisma.$transaction([
       prisma.codexRun.update({
         where: { id: run.id },
@@ -380,6 +381,49 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
         where: { id: task.id },
         data: { status: "SUCCEEDED", version: { increment: 1 } },
       }),
+      ...(reportedTests.length
+        ? [
+            prisma.testRun.create({
+              data: {
+                projectId: project.id,
+                developmentTaskId: task.id,
+                codexRunId: run.id,
+                commitSha,
+                status: reportedTests.every((test) => test.status === "PASSED")
+                  ? "PASSED"
+                  : "FAILED",
+                command: reportedTests
+                  .map((test) => test.command)
+                  .join(" && ")
+                  .slice(0, 500),
+                startedAt: run.startedAt ?? new Date(),
+                finishedAt: new Date(),
+                summary: {
+                  source: "CODEX_RESULT",
+                  total: reportedTests.length,
+                  passed: reportedTests.filter((test) => test.status === "PASSED").length,
+                  failed: reportedTests.filter((test) => test.status === "FAILED").length,
+                  skipped: reportedTests.filter((test) => test.status === "NOT_RUN").length,
+                  acceptanceCriteriaMet: false,
+                  note: "Codex 자체 보고 결과이며 Acceptance Criteria 검증을 대체하지 않습니다.",
+                },
+                results: {
+                  create: reportedTests.map((test) => ({
+                    suite: "Codex reported tests",
+                    name: test.command,
+                    status:
+                      test.status === "PASSED"
+                        ? "PASSED"
+                        : test.status === "FAILED"
+                          ? "FAILED"
+                          : "SKIPPED",
+                    message: test.summary,
+                  })),
+                },
+              },
+            }),
+          ]
+        : []),
     ]);
     await addEvent(
       run.id,
@@ -401,6 +445,14 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
       url: pullRequest.htmlUrl,
       commitSha,
     });
+    if (reportedTests.length) {
+      await audit("TEST_RUN_RECORD", project.id, task.createdBy, "CodexRun", run.id, requestId, {
+        source: "CODEX_RESULT",
+        status: reportedTests.every((test) => test.status === "PASSED") ? "PASSED" : "FAILED",
+        count: reportedTests.length,
+        acceptanceCriteriaMet: false,
+      });
+    }
     return { commitSha, pullRequestUrl: pullRequest.htmlUrl };
   } catch (error) {
     const cancelled =
