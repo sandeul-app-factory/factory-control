@@ -32,6 +32,7 @@
     "db:generate": "pnpm --filter @sandeul/database generate",
     "db:migrate": "pnpm --filter @sandeul/database migrate",
     "admin:create": "pnpm --filter @sandeul/database admin:create",
+    "mcp:create-credential": "pnpm --filter @sandeul/database mcp:create-credential",
     "security:baseline": "pnpm audit --audit-level high && pnpm secrets:scan",
     "security:full": "node infra/scripts/security-toolchain.mjs",
     "secrets:scan": "node infra/scripts/secret-scan.mjs"
@@ -43,7 +44,7 @@
     "eslint-config-prettier": "10.1.8",
     "globals": "16.3.0",
     "prettier": "3.6.2",
-    "turbo": "2.5.6",
+    "turbo": "2.9.14",
     "typescript": "5.9.2",
     "typescript-eslint": "8.41.0"
   }

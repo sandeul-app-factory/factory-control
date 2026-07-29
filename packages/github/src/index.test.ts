@@ -29,4 +29,22 @@ describe("GitHub adapter security", () => {
     expect(pull.number).toBe(1);
     await expect(adapter.listPullRequests("sandeul", "sample")).resolves.toHaveLength(1);
   });
+
+  it("keeps repository IDs unique and stable across adapter restarts", async () => {
+    const input = {
+      owner: "sandeul",
+      name: "stable-factory-app",
+      description: "test",
+      private: true,
+    };
+    const first = await new FakeGithubAdapter().createRepository(input);
+    const second = await new FakeGithubAdapter().createRepository(input);
+    const other = await new FakeGithubAdapter().createRepository({
+      ...input,
+      name: "another-factory-app",
+    });
+
+    expect(first.id).toBe(second.id);
+    expect(first.id).not.toBe(other.id);
+  });
 });

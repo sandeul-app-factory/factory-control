@@ -1,0 +1,13 @@
+# Copy only after reviewing the existing server configuration.
+# Never overwrite an existing /etc/cloudflared/config.yaml automatically.
+tunnel: EXISTING_TUNNEL_ID
+credentials-file: /etc/cloudflared/EXISTING_TUNNEL_ID.json
+
+ingress:
+  - hostname: factory.sandeul.work
+    service: http://127.0.0.1:8080
+    originRequest:
+      connectTimeout: 10s
+      noHappyEyeballs: false
+      httpHostHeader: factory.sandeul.work
+  - service: http_status:404

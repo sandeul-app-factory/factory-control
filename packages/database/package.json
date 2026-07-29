@@ -18,14 +18,15 @@
     "build": "prisma generate && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "admin:create": "tsx src/cli/create-admin.ts"
+    "admin:create": "tsx src/cli/create-admin.ts",
+    "mcp:create-credential": "tsx src/cli/create-mcp-credential.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.0",
-    "argon2": "0.45.1"
+    "argon2": "0.45.1",
+    "prisma": "6.19.0"
   },
   "devDependencies": {
-    "prisma": "6.19.0",
     "tsx": "4.20.5",
     "typescript": "5.9.2",
     "vitest": "4.1.10"

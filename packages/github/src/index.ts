@@ -400,7 +400,7 @@ export class FakeGithubAdapter implements GithubAdapter {
 
   createRepository(input: CreateRepositoryInput): Promise<GithubRepositoryInfo> {
     const repository: GithubRepositoryInfo = {
-      id: String(this.repositories.size + 1001),
+      id: `fake-${sha256(`${input.owner}/${input.name}`).slice(0, 24)}`,
       owner: input.owner,
       name: input.name,
       htmlUrl: `https://github.com/${input.owner}/${input.name}`,

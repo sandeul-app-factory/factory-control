@@ -46,6 +46,8 @@ import type {
   DevelopmentTaskDetail,
   FactoryBuild,
   FactoryRelease,
+  FactorySettings,
+  McpCredential,
   PrdVersion,
   Project,
   SecurityScan,
@@ -2284,6 +2286,281 @@ function QualityOverview({ focus }: { focus: "tests" | "security" | "builds" }) 
   );
 }
 
+function SettingsView({ auth, onSignedOut }: { auth: AuthState; onSignedOut: () => void }) {
+  const queryClient = useQueryClient();
+  const [issuedToken, setIssuedToken] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const settings = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => apiRequest<FactorySettings>("/settings"),
+  });
+  const credentials = useQuery({
+    queryKey: ["mcp-credentials"],
+    queryFn: () => apiRequest<McpCredential[]>("/settings/mcp-credentials"),
+  });
+  const createCredential = useMutation({
+    mutationFn: (payload: {
+      name: string;
+      scopes: string[];
+      rateLimit: number;
+      expiresAt?: string;
+    }) =>
+      apiRequest<McpCredential>("/settings/mcp-credentials", {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: async (credential) => {
+      setIssuedToken(credential.token ?? null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({ queryKey: ["mcp-credentials"] }),
+      ]);
+    },
+  });
+  const revokeCredential = useMutation({
+    mutationFn: (credentialId: string) =>
+      apiRequest(`/settings/mcp-credentials/${credentialId}/revoke`, {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({ queryKey: ["mcp-credentials"] }),
+      ]);
+    },
+  });
+  const changePassword = useMutation({
+    mutationFn: (payload: { currentPassword: string; newPassword: string }) =>
+      apiRequest("/auth/password", {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: onSignedOut,
+  });
+  const revokeSessions = useMutation({
+    mutationFn: () =>
+      apiRequest("/auth/sessions/revoke-all", {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+      }),
+    onSuccess: onSignedOut,
+  });
+  const error =
+    settings.error ||
+    credentials.error ||
+    createCredential.error ||
+    revokeCredential.error ||
+    changePassword.error ||
+    revokeSessions.error;
+  const config = settings.data;
+  return (
+    <div className="grid gap-5">
+      <div>
+        <p className="text-sm font-medium text-emerald-300">ADMINISTRATION</p>
+        <h1 className="mt-1 text-2xl font-semibold">설정</h1>
+        <p className="mt-2 text-sm text-zinc-500">
+          Secret 값은 표시하지 않으며 Adapter와 보안 경계의 활성 상태만 보여줍니다.
+        </p>
+      </div>
+      <ErrorNotice error={error} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Public URL", config?.publicUrl ?? "—"],
+          ["GitHub", config?.githubAdapter ?? "—"],
+          ["Codex", `${config?.codexAdapter ?? "—"} · 동시 ${config?.codexConcurrency ?? 1}`],
+          ["MCP", config?.mcpEnabled ? "활성" : "비활성"],
+          ["Signing Worker", config?.signingWorkerEnabled ? "활성" : "비활성 Stub"],
+          ["Session Cookie", config?.sessionSecure ? "Secure" : "개발 모드"],
+          ["SameSite", config?.sessionSameSite ?? "—"],
+          ["시간대", config?.timezone ?? "Asia/Seoul"],
+        ].map(([label, value]) => (
+          <Card className="p-4" key={label}>
+            <p className="text-xs text-zinc-600">{label}</p>
+            <p className="mt-2 break-all text-sm font-medium">{value}</p>
+          </Card>
+        ))}
+      </div>
+      <Card className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">MCP Credential</h2>
+            <p className="mt-2 text-sm text-zinc-500">
+              범용 Shell/SQL 없이 허용한 Factory Tool scope만 발급합니다. Endpoint:{" "}
+              <code>{config?.publicUrl ?? "https://factory.sandeul.work"}/api/mcp</code>
+            </p>
+          </div>
+          <Badge tone={config?.mcpEnabled ? "success" : "warning"}>
+            {config?.mcpEnabled ? "MCP ENABLED" : "MCP DISABLED"}
+          </Badge>
+        </div>
+        {issuedToken ? (
+          <div className="mt-4 rounded-lg border border-amber-800 bg-amber-950/30 p-4">
+            <p className="text-sm font-medium text-amber-200">한 번만 표시되는 Token</p>
+            <code className="mt-2 block break-all text-xs text-amber-100">{issuedToken}</code>
+            <div className="mt-3 flex items-center gap-3">
+              <Button
+                onClick={() => {
+                  void navigator.clipboard.writeText(issuedToken);
+                }}
+              >
+                복사
+              </Button>
+              <button className="text-xs text-zinc-500" onClick={() => setIssuedToken(null)}>
+                화면에서 지우기
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <form
+          className="mt-5 grid gap-3 lg:grid-cols-[200px_1fr_120px_180px_auto]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const expiresAt = formString(data, "expiresAt");
+            createCredential.mutate({
+              name: formString(data, "name"),
+              scopes: formString(data, "scopes")
+                .split(",")
+                .map((scope) => scope.trim())
+                .filter(Boolean),
+              rateLimit: Number(formString(data, "rateLimit")),
+              ...(expiresAt
+                ? { expiresAt: new Date(`${expiresAt}T23:59:59+09:00`).toISOString() }
+                : {}),
+            });
+          }}
+        >
+          <input className="factory-input" name="name" required placeholder="Credential 이름" />
+          <input
+            className="factory-input"
+            name="scopes"
+            required
+            placeholder="factory.list_projects,factory.get_project"
+          />
+          <input
+            aria-label="분당 요청 수"
+            className="factory-input"
+            defaultValue="30"
+            max="1000"
+            min="1"
+            name="rateLimit"
+            required
+            type="number"
+          />
+          <input
+            aria-label="Credential 만료일"
+            className="factory-input"
+            name="expiresAt"
+            type="date"
+          />
+          <Button disabled={createCredential.isPending} type="submit">
+            발급
+          </Button>
+        </form>
+        <div className="mt-5 divide-y divide-zinc-800 border-t border-zinc-800">
+          {credentials.data?.map((credential) => (
+            <div className="flex flex-wrap items-center gap-3 py-4" key={credential.id}>
+              <div>
+                <p className="text-sm font-medium">{credential.name}</p>
+                <p className="mt-1 text-xs text-zinc-600">
+                  {credential.scopes.join(", ")} · 분당 {credential.rateLimit}
+                </p>
+              </div>
+              <Badge className="ml-auto" tone={statusTone(credential.status)}>
+                {credential.status}
+              </Badge>
+              {!credential.revokedAt ? (
+                <Button
+                  className="!bg-red-950 !text-red-300 hover:!bg-red-900"
+                  disabled={revokeCredential.isPending}
+                  onClick={() => revokeCredential.mutate(credential.id)}
+                >
+                  폐기
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </Card>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card className="p-5">
+          <h2 className="font-semibold">비밀번호 변경</h2>
+          <p className="mt-2 text-sm text-zinc-500">변경 후 모든 Session이 강제 종료됩니다.</p>
+          <form
+            className="mt-4 grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const newPassword = formString(data, "newPassword");
+              if (newPassword !== formString(data, "confirmPassword")) {
+                setPasswordError("새 비밀번호 확인이 일치하지 않습니다.");
+                return;
+              }
+              setPasswordError(null);
+              changePassword.mutate({
+                currentPassword: formString(data, "currentPassword"),
+                newPassword,
+              });
+            }}
+          >
+            <input
+              autoComplete="current-password"
+              className="factory-input"
+              name="currentPassword"
+              placeholder="현재 비밀번호"
+              required
+              type="password"
+            />
+            <input
+              autoComplete="new-password"
+              className="factory-input"
+              minLength={14}
+              name="newPassword"
+              placeholder="새 비밀번호"
+              required
+              type="password"
+            />
+            <input
+              autoComplete="new-password"
+              className="factory-input"
+              minLength={14}
+              name="confirmPassword"
+              placeholder="새 비밀번호 확인"
+              required
+              type="password"
+            />
+            {passwordError ? (
+              <p className="text-sm text-red-300" role="alert">
+                {passwordError}
+              </p>
+            ) : null}
+            <Button disabled={changePassword.isPending} type="submit">
+              비밀번호 변경
+            </Button>
+          </form>
+        </Card>
+        <Card className="p-5">
+          <h2 className="font-semibold">Session 강제 종료</h2>
+          <p className="mt-2 text-sm leading-6 text-zinc-500">
+            현재 Session을 포함해 이 관리자 계정의 모든 Session을 폐기합니다. 다시 로그인해야
+            합니다.
+          </p>
+          <Button
+            className="mt-5 !bg-red-950 !text-red-300 hover:!bg-red-900"
+            disabled={revokeSessions.isPending}
+            onClick={() => revokeSessions.mutate()}
+          >
+            모든 Session 종료
+          </Button>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function AuditView() {
   const logs = useQuery({
     queryKey: ["audit"],
@@ -2368,6 +2645,7 @@ export function ControlCenter({ auth, onSignedOut }: { auth: AuthState; onSigned
       />
     );
   else if (view === "audit") content = <AuditView />;
+  else if (view === "settings") content = <SettingsView auth={auth} onSignedOut={onSignedOut} />;
   else if (view === "tests" || view === "security" || view === "builds")
     content = <QualityOverview focus={view} />;
   else if (view === "dashboard" || view === "projects")

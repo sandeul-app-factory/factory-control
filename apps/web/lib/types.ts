@@ -243,3 +243,31 @@ export interface FactoryRelease {
   approvedAt?: string | null;
   createdAt: string;
 }
+
+export interface FactorySettings {
+  publicUrl: string;
+  timezone: string;
+  githubAdapter: string;
+  codexAdapter: string;
+  codexConcurrency: number;
+  mcpEnabled: boolean;
+  mcpCredentialCount: number;
+  signingWorkerEnabled: boolean;
+  sessionSecure: boolean;
+  sessionSameSite: string;
+  cloudflareAccessSupported: boolean;
+}
+
+export interface McpCredential {
+  id: string;
+  name: string;
+  scopes: string[];
+  rateLimit: number;
+  status: string;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  createdAt: string;
+  revokedAt?: string | null;
+  token?: string;
+  warning?: string;
+}

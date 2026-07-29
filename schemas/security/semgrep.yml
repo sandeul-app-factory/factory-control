@@ -1,0 +1,49 @@
+rules:
+  - id: factory.no-eval
+    message: Dynamic code evaluation is forbidden in Factory runtime code.
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+
+  - id: factory.no-unsafe-prisma-query
+    message: Unsafe raw Prisma SQL bypasses parameterization.
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-either:
+      - pattern: $DB.$queryRawUnsafe(...)
+      - pattern: $DB.$executeRawUnsafe(...)
+
+  - id: factory.no-shell-exec
+    message: Shell parsing is forbidden; use a fixed executable and validated argument array.
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-either:
+      - pattern: exec(...)
+      - pattern: execSync(...)
+
+  - id: factory.no-shell-true
+    message: Child processes must run with shell disabled.
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern: |
+      $CALL(..., { ..., shell: true, ... }, ...)
+
+  - id: factory.no-disabled-tls-verification
+    message: TLS certificate verification must not be disabled.
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern: |
+      { ..., rejectUnauthorized: false, ... }
+
+  - id: factory.no-danger-full-access
+    message: Factory Codex execution must not request danger-full-access.
+    severity: ERROR
+    languages: [generic]
+    paths:
+      include:
+        - /apps/**
+        - /packages/**
+        - /infra/**
+    pattern-regex: danger-full-access

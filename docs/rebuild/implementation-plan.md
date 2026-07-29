@@ -12,7 +12,7 @@
 - Phase 2 완료: 프로젝트 상태 머신, Artifact/PRD/의사결정 API와 CEO Control Center
 - Phase 3 완료: GitHub App/PAT/Fake, Webhook, Task/Queue, Codex Worker, SSE, diff/PR
 - Phase 4 완료: Test/Security/Build UI와 API, Release Gate, Android baseline, Signing Stub
-- Phase 5 진행 예정
+- Phase 5 완료: MCP, 운영 Compose/runbook, 관리자 설정, E2E, 보안 도구 체인
 
 ## Phase 0 — 분석 및 보존
 

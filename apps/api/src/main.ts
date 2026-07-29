@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
@@ -8,7 +9,13 @@ import { AppModule } from "./app.module.js";
 import { FactoryExceptionFilter } from "./common/http-exception.filter.js";
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+    rawBody: true,
+  });
+  app.useBodyParser("json", {
+    limit: Number(process.env.MAX_JSON_BODY_BYTES ?? 3_145_728),
+  });
   const express = app.getHttpAdapter().getInstance() as {
     set(name: string, value: (key: string, item: unknown) => unknown): void;
   };

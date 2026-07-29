@@ -13,6 +13,8 @@ import { ProjectsModule } from "./projects/projects.module.js";
 import { RepositoriesModule } from "./repositories/repositories.module.js";
 import { TasksModule } from "./tasks/tasks.module.js";
 import { QualityModule } from "./quality/quality.module.js";
+import { McpModule } from "./mcp/mcp.module.js";
+import { SettingsModule } from "./settings/settings.module.js";
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { QualityModule } from "./quality/quality.module.js";
     RepositoriesModule,
     TasksModule,
     QualityModule,
+    McpModule,
+    SettingsModule,
   ],
   controllers: [HealthController],
   providers: [

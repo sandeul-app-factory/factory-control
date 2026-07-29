@@ -9,6 +9,7 @@ import { AuditService } from "../audit/audit.service.js";
 function objectStorage(): S3ObjectStorage {
   return new S3ObjectStorage(process.env.S3_BUCKET ?? "factory-artifacts", {
     ...(process.env.S3_ENDPOINT ? { endpoint: process.env.S3_ENDPOINT } : {}),
+    ...(process.env.S3_PUBLIC_ENDPOINT ? { publicEndpoint: process.env.S3_PUBLIC_ENDPOINT } : {}),
     region: process.env.S3_REGION ?? "auto",
     accessKeyId: process.env.S3_ACCESS_KEY_ID ?? "",
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? "",

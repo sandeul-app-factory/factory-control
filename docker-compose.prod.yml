@@ -1,4 +1,14 @@
-name: sandeul-factory-dev
+name: sandeul-factory-prod
+
+x-service-security: &service-security
+  init: true
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  tmpfs:
+    - /tmp:size=128m,mode=1777
 
 services:
   postgres:
@@ -13,22 +23,31 @@ services:
       - factory_postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-factory} -d ${POSTGRES_DB:-factory}"]
-      interval: 5s
-      timeout: 3s
+      interval: 10s
+      timeout: 5s
       retries: 20
     restart: unless-stopped
 
   redis:
     image: redis:8.2.1-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${REDIS_PASSWORD:?REDIS_PASSWORD is required}",
+      ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     ports:
       - "127.0.0.1:${REDIS_BIND_PORT:-6379}:6379"
     volumes:
       - factory_redis:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
+      interval: 10s
+      timeout: 5s
       retries: 20
     restart: unless-stopped
 
@@ -38,15 +57,12 @@ services:
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
-    ports:
-      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - factory_minio:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 3s
+      interval: 10s
+      timeout: 5s
       retries: 20
     restart: unless-stopped
 
@@ -61,10 +77,12 @@ services:
       - >-
         mc alias set factory http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD";
         mc mb --ignore-existing "factory/${S3_BUCKET:-factory-artifacts}";
+        mc version enable "factory/${S3_BUCKET:-factory-artifacts}";
         mc anonymous set none "factory/${S3_BUCKET:-factory-artifacts}"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
+    restart: "no"
 
   migrate:
     build:
@@ -81,36 +99,52 @@ services:
     restart: "no"
 
   api:
+    <<: *service-security
     build:
       context: .
       dockerfile: infra/docker/Dockerfile
       args:
         FILTER: "@sandeul/api"
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
+      TZ: Asia/Seoul
       API_PORT: 4000
+      FACTORY_PUBLIC_URL: https://factory.sandeul.work
       DATABASE_URL: postgresql://${POSTGRES_USER:-factory}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-factory}?schema=public
-      REDIS_URL: redis://redis:6379
-      SESSION_SECURE: "false"
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-factory_session}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
-      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-http://localhost:3000}
+      SESSION_SECURE: "true"
+      SESSION_SAME_SITE: ${SESSION_SAME_SITE:-lax}
+      AUTH_ALLOWED_ORIGINS: https://factory.sandeul.work
       AUDIT_HASH_PEPPER: ${AUDIT_HASH_PEPPER:?AUDIT_HASH_PEPPER is required}
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
+      LOGIN_LOCK_MINUTES: ${LOGIN_LOCK_MINUTES:-15}
       S3_ENDPOINT: http://minio:9000
-      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-https://factory.sandeul.work}
       S3_REGION: ${S3_REGION:-auto}
       S3_BUCKET: ${S3_BUCKET:-factory-artifacts}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_FORCE_PATH_STYLE: "true"
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
       MAX_JSON_BODY_BYTES: ${MAX_JSON_BODY_BYTES:-3145728}
-      GITHUB_ADAPTER: ${GITHUB_ADAPTER:-fake}
-      CODEX_ADAPTER: ${CODEX_ADAPTER:-fake}
+      GITHUB_ADAPTER: ${GITHUB_ADAPTER:-app}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
+      GITHUB_PRIVATE_KEY_BASE64: ${GITHUB_PRIVATE_KEY_BASE64:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_FINE_GRAINED_PAT: ${GITHUB_FINE_GRAINED_PAT:-}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      CODEX_ADAPTER: ${CODEX_ADAPTER:-real}
+      CODEX_QUEUE_NAME: ${CODEX_QUEUE_NAME:-codex-tasks}
+      CODEX_JOB_MAX_ATTEMPTS: ${CODEX_JOB_MAX_ATTEMPTS:-3}
       MCP_ENABLED: ${MCP_ENABLED:-false}
       MCP_TOKEN_PEPPER: ${MCP_TOKEN_PEPPER:-}
-      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-http://localhost:3000}
+      MCP_ALLOWED_ORIGINS: https://factory.sandeul.work
       MCP_MAX_PRD_BYTES: ${MCP_MAX_PRD_BYTES:-2097152}
-    ports:
-      - "127.0.0.1:${API_BIND_PORT:-4000}:4000"
+      SIGNING_WORKER_ENABLED: ${SIGNING_WORKER_ENABLED:-false}
+      SIGNING_WORKER_ENDPOINT: ${SIGNING_WORKER_ENDPOINT:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -126,12 +160,13 @@ services:
           "-e",
           "fetch('http://localhost:4000/api/health').then(r=>{if(!r.ok)process.exit(1)})",
         ]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 12
     restart: unless-stopped
 
   web:
+    <<: *service-security
     build:
       context: .
       dockerfile: infra/docker/Dockerfile
@@ -139,68 +174,56 @@ services:
         FILTER: "@sandeul/web"
     environment:
       NODE_ENV: production
+      TZ: Asia/Seoul
       NEXT_PUBLIC_API_URL: /api
       API_INTERNAL_URL: http://api:4000
-    ports:
-      - "127.0.0.1:${WEB_BIND_PORT:-3000}:3000"
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+      - /app/.next/cache:size=128m,mode=0700,uid=1000,gid=1000
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
       test:
         ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>{if(!r.ok)process.exit(1)})"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 12
     restart: unless-stopped
 
-  worker-workspace-init:
-    image: sandeul-factory-dev-worker:latest
-    user: "0:0"
-    entrypoint: ["sh", "-c", "chown -R node:node /var/lib/factory-workspaces"]
+  gateway:
+    image: nginx:1.28.0-alpine
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    ports:
+      - "127.0.0.1:${FACTORY_GATEWAY_PORT:-8080}:8080"
     volumes:
-      - factory_workspaces:/var/lib/factory-workspaces
-    restart: "no"
-
-  worker:
-    image: sandeul-factory-dev-worker:latest
-    build:
-      context: .
-      dockerfile: infra/docker/Dockerfile
-      args:
-        FILTER: "@sandeul/worker"
-    environment:
-      NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-factory}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-factory}?schema=public
-      REDIS_URL: redis://redis:6379
-      CODEX_ADAPTER: fake
-      CODEX_QUEUE_NAME: ${CODEX_QUEUE_NAME:-codex-tasks}
-      CODEX_CONCURRENCY: ${CODEX_CONCURRENCY:-1}
-      CODEX_JOB_TIMEOUT_MS: ${CODEX_JOB_TIMEOUT_MS:-1800000}
-      CODEX_JOB_MAX_ATTEMPTS: ${CODEX_JOB_MAX_ATTEMPTS:-3}
-      CODEX_WORKSPACE_ROOT: /var/lib/factory-workspaces
-      CODEX_WORKSPACE_CLEANUP: ${CODEX_WORKSPACE_CLEANUP:-true}
-      CODEX_RESULT_SCHEMA_PATH: /app/schemas/codex/codex-result.schema.json
-      CODEX_ALLOWED_TEST_COMMANDS: ${CODEX_ALLOWED_TEST_COMMANDS:-pnpm test,pnpm lint,pnpm typecheck,./gradlew test,./gradlew lint}
-      GITHUB_ADAPTER: ${GITHUB_ADAPTER:-fake}
-      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
-      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
-      GITHUB_PRIVATE_KEY_BASE64: ${GITHUB_PRIVATE_KEY_BASE64:-}
-      GITHUB_FINE_GRAINED_PAT: ${GITHUB_FINE_GRAINED_PAT:-}
-      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
-    volumes:
-      - factory_workspaces:/var/lib/factory-workspaces
+      - ./infra/reverse-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    tmpfs:
+      - /var/cache/nginx:size=64m,mode=0755
+      - /var/run:size=8m,mode=0755
+      - /tmp:size=16m,mode=1777
     depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
+      web:
         condition: service_healthy
-      worker-workspace-init:
-        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
     restart: unless-stopped
 
 volumes:
   factory_postgres:
   factory_redis:
   factory_minio:
-  factory_workspaces:

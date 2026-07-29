@@ -1,10 +1,15 @@
-FROM node:22.18.0-bookworm-slim AS base
+FROM node:22.23.1-bookworm-slim AS base
 ENV PNPM_HOME="/pnpm"
+ENV COREPACK_HOME="/opt/corepack"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ca-certificates git openssl \
     && rm -rf /var/lib/apt/lists/* \
-    && corepack enable
+    && mkdir -p /pnpm /opt/corepack \
+    && corepack enable --install-directory /pnpm \
+    && corepack prepare pnpm@10.15.1 --activate \
+    && chmod -R a+rX /opt/corepack /pnpm
 WORKDIR /workspace
 
 FROM base AS dependencies
@@ -26,10 +31,27 @@ ARG FILTER
 COPY . .
 RUN pnpm --filter @sandeul/database generate
 RUN pnpm --filter "${FILTER}..." build
+RUN pnpm --filter "${FILTER}" --prod deploy --legacy /runtime
+RUN schema_path="$(find /runtime -path '*/prisma/schema.prisma' -print -quit)" \
+    && if [ -n "$schema_path" ]; then \
+      prisma_cli="$(find /runtime -path '*/prisma/build/index.js' -print -quit)"; \
+      node "$prisma_cli" generate --schema "$schema_path"; \
+    fi
 
-FROM base AS runtime
+FROM node:22.23.1-bookworm-slim AS runtime
 ENV NODE_ENV=production
-COPY --from=builder /workspace /workspace
+WORKDIR /app
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends ca-certificates openssl \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    && mkdir -p /var/lib/factory-workspaces \
+    && chown node:node /var/lib/factory-workspaces
+COPY --chown=node:node --from=builder /runtime /app
+COPY --chown=node:node --from=builder /workspace/schemas /app/schemas
 ARG FILTER
 ENV APP_FILTER="${FILTER}"
-CMD ["sh", "-c", "pnpm --filter \"$APP_FILTER\" start"]
+USER node
+CMD ["sh", "-c", "case \"$APP_FILTER\" in '@sandeul/web') exec node node_modules/next/dist/bin/next start --hostname 0.0.0.0 ;; '@sandeul/database') exec node node_modules/prisma/build/index.js migrate deploy ;; *) exec node dist/main.js ;; esac"]

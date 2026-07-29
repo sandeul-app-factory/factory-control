@@ -1,0 +1,39 @@
+[Unit]
+Description=Sandeul App Factory Codex Worker
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=factory-codex
+Group=factory-codex
+WorkingDirectory=/opt/sandeul-app-factory
+EnvironmentFile=/etc/sandeul-factory/worker.env
+ExecStart=/usr/bin/pnpm --filter @sandeul/worker start
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=45s
+KillSignal=SIGTERM
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/srv/factory-workspaces
+
+[Install]
+WantedBy=multi-user.target

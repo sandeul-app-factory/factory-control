@@ -107,25 +107,36 @@ export function artifactObjectKey(
 
 export class S3ObjectStorage implements ObjectStorage {
   private readonly client: S3Client;
+  private readonly downloadClient: S3Client;
 
   constructor(
     private readonly bucket: string,
     options: {
       endpoint?: string;
+      publicEndpoint?: string;
       region: string;
       accessKeyId: string;
       secretAccessKey: string;
       forcePathStyle: boolean;
     },
   ) {
-    this.client = new S3Client({
-      ...(options.endpoint ? { endpoint: options.endpoint } : {}),
+    const shared = {
       region: options.region,
       forcePathStyle: options.forcePathStyle,
       credentials: {
         accessKeyId: options.accessKeyId,
         secretAccessKey: options.secretAccessKey,
       },
+    };
+    this.client = new S3Client({
+      ...shared,
+      ...(options.endpoint ? { endpoint: options.endpoint } : {}),
+    });
+    this.downloadClient = new S3Client({
+      ...shared,
+      ...(options.publicEndpoint || options.endpoint
+        ? { endpoint: options.publicEndpoint || options.endpoint }
+        : {}),
     });
   }
 
@@ -148,7 +159,7 @@ export class S3ObjectStorage implements ObjectStorage {
 
   async signedDownloadUrl(key: string, downloadName: string): Promise<string> {
     return getSignedUrl(
-      this.client,
+      this.downloadClient,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
