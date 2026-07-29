@@ -97,4 +97,3 @@ pnpm security:baseline
 - 실패/미구현/가정을 숨기지 않은 완료 보고서 작성
 - 변경 파일과 이유, commit SHA, artifact SHA-256 기록
 - 관련 Architecture, API, Operations 문서 갱신
-

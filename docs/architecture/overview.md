@@ -86,4 +86,3 @@ Next.js Web ───── REST + SSE ───── NestJS API
 - CRITICAL/HIGH finding, 테스트/빌드/SBOM 실패는 release를 차단한다.
 - Critical risk acceptance는 서버에서 거부한다.
 - 실제 signing은 MVP에서 interface와 disabled stub까지만 제공한다.
-

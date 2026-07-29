@@ -41,7 +41,8 @@ export class AuthService {
         ip: request.ip,
         userAgent: request.header("user-agent"),
         outcome: "FAILURE",
-        reason: user?.lockedUntil && user.lockedUntil > now ? "ACCOUNT_LOCKED" : "INVALID_CREDENTIALS",
+        reason:
+          user?.lockedUntil && user.lockedUntil > now ? "ACCOUNT_LOCKED" : "INVALID_CREDENTIALS",
       });
       throw new UnauthorizedException(genericFailure);
     }

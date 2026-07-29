@@ -5,6 +5,13 @@
 각 Phase는 typecheck, lint, test, build, 기본 보안 검사, 문서 갱신을 통과한 뒤 독립
 커밋한다. 실패가 남아 있으면 다음 Phase로 이동하지 않는다.
 
+## 진행 현황
+
+- Phase 0 완료: 기준점, 구조 조사, Architecture, threat model
+- Phase 1 완료: monorepo, 인증, 감사 로그, DB/Redis/MinIO, 개발 Compose
+- Phase 2 완료: 프로젝트 상태 머신, Artifact/PRD/의사결정 API와 CEO Control Center
+- Phase 3 진행 예정
+
 ## Phase 0 — 분석 및 보존
 
 - 새 저장소 `main`에 legacy inventory 기준점 생성

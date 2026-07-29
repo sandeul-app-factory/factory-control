@@ -12,23 +12,23 @@
 
 ## 주요 위협과 통제
 
-| 위협 | 공격 경로 | 통제 |
-| --- | --- | --- |
-| 계정 탈취 | password guessing, session theft | Argon2id, 로그인 rate limit, HttpOnly/Secure/SameSite cookie, session revoke |
-| CSRF | 인증된 CEO의 mutation 유도 | double-submit token + Origin 검증, SameSite cookie |
-| 권한 상승 | UI 우회 API 호출 | API guard의 RBAC, 리소스 단위 검사, 감사 로그 |
-| PRD 변조 | lock 후 직접 수정 | immutable version, SHA-256, optimistic locking, lock snapshot |
-| 명령 주입 | Task instruction을 shell로 사용 | command/argument allowlist, spawn without shell, prompt stdin |
-| Prompt injection | PRD/attachment 안의 악성 지시 | 우선순위가 고정된 system rules, 데이터 경계 표기, allowed/denied path |
-| Secret 유출 | 로그, Codex prompt, commit | redaction, `.env` 금지, Worker env 최소화, signing 분리 |
-| Path traversal | filename/object key/workspace path | 서버 생성 UUID key, basename 제거, resolved root 검사 |
-| 악성 업로드 | polyglot, 확장자 위장, oversized file | magic-byte/MIME allowlist, size limit, extension match, SHA-256 |
-| SSRF | webhook/artifact URL, Repository URL | GitHub API base allowlist, redirect 차단, private-network 차단 |
-| Webhook 위조/재전송 | forged signature, duplicate delivery | HMAC constant-time compare, unique delivery ID |
-| Queue replay | 중복 Codex 실행 | idempotency key unique, atomic status transition, attempts/dead-letter |
-| Supply-chain | 취약 dependency/image | lockfile, audit, OSV, Semgrep, gitleaks, Trivy, SBOM |
-| Release 우회 | 실패 결과를 성공 처리 | server-side release gate, immutable run refs, explicit risk acceptance |
-| 감사 삭제 | 관리자 또는 침해자 은폐 | update/delete API 없음, DB privilege 분리 권장, backup/retention |
+| 위협                | 공격 경로                             | 통제                                                                         |
+| ------------------- | ------------------------------------- | ---------------------------------------------------------------------------- |
+| 계정 탈취           | password guessing, session theft      | Argon2id, 로그인 rate limit, HttpOnly/Secure/SameSite cookie, session revoke |
+| CSRF                | 인증된 CEO의 mutation 유도            | double-submit token + Origin 검증, SameSite cookie                           |
+| 권한 상승           | UI 우회 API 호출                      | API guard의 RBAC, 리소스 단위 검사, 감사 로그                                |
+| PRD 변조            | lock 후 직접 수정                     | immutable version, SHA-256, optimistic locking, lock snapshot                |
+| 명령 주입           | Task instruction을 shell로 사용       | command/argument allowlist, spawn without shell, prompt stdin                |
+| Prompt injection    | PRD/attachment 안의 악성 지시         | 우선순위가 고정된 system rules, 데이터 경계 표기, allowed/denied path        |
+| Secret 유출         | 로그, Codex prompt, commit            | redaction, `.env` 금지, Worker env 최소화, signing 분리                      |
+| Path traversal      | filename/object key/workspace path    | 서버 생성 UUID key, basename 제거, resolved root 검사                        |
+| 악성 업로드         | polyglot, 확장자 위장, oversized file | magic-byte/MIME allowlist, size limit, extension match, SHA-256              |
+| SSRF                | webhook/artifact URL, Repository URL  | GitHub API base allowlist, redirect 차단, private-network 차단               |
+| Webhook 위조/재전송 | forged signature, duplicate delivery  | HMAC constant-time compare, unique delivery ID                               |
+| Queue replay        | 중복 Codex 실행                       | idempotency key unique, atomic status transition, attempts/dead-letter       |
+| Supply-chain        | 취약 dependency/image                 | lockfile, audit, OSV, Semgrep, gitleaks, Trivy, SBOM                         |
+| Release 우회        | 실패 결과를 성공 처리                 | server-side release gate, immutable run refs, explicit risk acceptance       |
+| 감사 삭제           | 관리자 또는 침해자 은폐               | update/delete API 없음, DB privilege 분리 권장, backup/retention             |
 
 ## STRIDE 검토
 
@@ -48,4 +48,3 @@
 - Backup 암호화, 보관 주기, 복구 훈련
 - Signing Worker와 HSM/keystore 실제 구현
 - 운영 서버의 OS patch와 Worker 전용 사용자 hardening
-

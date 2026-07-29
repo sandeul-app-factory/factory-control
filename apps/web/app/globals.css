@@ -38,6 +38,81 @@ textarea {
   font: inherit;
 }
 
+.factory-input {
+  min-height: 2.75rem;
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid #3f3f46;
+  background: #09090b;
+  padding: 0 0.75rem;
+  color: #f4f4f5;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.factory-input:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgb(16 185 129 / 0.14);
+}
+
+.prose-factory {
+  color: #d4d4d8;
+  line-height: 1.75;
+}
+
+.prose-factory h1,
+.prose-factory h2,
+.prose-factory h3 {
+  margin: 1.5em 0 0.6em;
+  color: #fafafa;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.prose-factory h1 {
+  font-size: 1.7rem;
+}
+
+.prose-factory h2 {
+  font-size: 1.35rem;
+}
+
+.prose-factory h3 {
+  font-size: 1.1rem;
+}
+
+.prose-factory ul,
+.prose-factory ol {
+  margin: 1em 0;
+  padding-left: 1.5rem;
+}
+
+.prose-factory ul {
+  list-style: disc;
+}
+
+.prose-factory ol {
+  list-style: decimal;
+}
+
+.prose-factory code,
+.prose-factory pre {
+  border-radius: 0.5rem;
+  background: #09090b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.prose-factory code {
+  padding: 0.15rem 0.3rem;
+}
+
+.prose-factory pre {
+  overflow: auto;
+  padding: 1rem;
+}
+
 ::selection {
   background: rgb(52 211 153 / 0.3);
 }

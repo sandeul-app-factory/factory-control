@@ -6,12 +6,20 @@ import { AuthModule } from "./auth/auth.module.js";
 import { CsrfGuard, RolesGuard, SessionAuthGuard } from "./common/guards.js";
 import { RequestIdMiddleware } from "./common/request-id.middleware.js";
 import { HealthController } from "./health.controller.js";
+import { ArtifactsModule } from "./artifacts/artifacts.module.js";
+import { DecisionsModule } from "./decisions/decisions.module.js";
+import { PrdModule } from "./prd/prd.module.js";
+import { ProjectsModule } from "./projects/projects.module.js";
 
 @Module({
   imports: [
     ThrottlerModule.forRoot([{ name: "default", ttl: 60_000, limit: 120 }]),
     AuditModule,
     AuthModule,
+    ProjectsModule,
+    ArtifactsModule,
+    PrdModule,
+    DecisionsModule,
   ],
   controllers: [HealthController],
   providers: [

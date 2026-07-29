@@ -1,11 +1,4 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Post,
-  Res,
-} from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Post, Res } from "@nestjs/common";
 import type { CookieOptions, Response } from "express";
 import { changePasswordSchema, loginSchema } from "@sandeul/contracts";
 import { CurrentAuth, CurrentRequest, Public } from "../common/decorators.js";
@@ -72,7 +65,10 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     await this.authService.logout(auth, request);
-    response.clearCookie(process.env.SESSION_COOKIE_NAME ?? "factory_session", cookieOptions(new Date(0)));
+    response.clearCookie(
+      process.env.SESSION_COOKIE_NAME ?? "factory_session",
+      cookieOptions(new Date(0)),
+    );
     return { ok: true };
   }
 
@@ -91,7 +87,10 @@ export class AuthController {
       parsed.data.newPassword,
       request,
     );
-    response.clearCookie(process.env.SESSION_COOKIE_NAME ?? "factory_session", cookieOptions(new Date(0)));
+    response.clearCookie(
+      process.env.SESSION_COOKIE_NAME ?? "factory_session",
+      cookieOptions(new Date(0)),
+    );
     return { ok: true, message: "비밀번호가 변경되어 모든 세션이 종료되었습니다." };
   }
 
@@ -102,7 +101,10 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const revokedCount = await this.authService.revokeAllSessions(auth, request);
-    response.clearCookie(process.env.SESSION_COOKIE_NAME ?? "factory_session", cookieOptions(new Date(0)));
+    response.clearCookie(
+      process.env.SESSION_COOKIE_NAME ?? "factory_session",
+      cookieOptions(new Date(0)),
+    );
     return { ok: true, revokedCount };
   }
 }

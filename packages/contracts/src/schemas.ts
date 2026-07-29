@@ -102,7 +102,10 @@ export const taskInputSchema = z.object({
   acceptanceCriteria: z.array(nonEmpty.max(3000)).min(1),
   targetRepositoryId: uuid.optional(),
   targetBranch: z.string().trim().min(1).max(255),
-  targetCommitSha: z.string().regex(/^[0-9a-f]{40}$/i).optional(),
+  targetCommitSha: z
+    .string()
+    .regex(/^[0-9a-f]{40}$/i)
+    .optional(),
   allowedPaths: z.array(z.string().trim().min(1).max(500)).default([]),
   deniedPaths: z.array(z.string().trim().min(1).max(500)).default([]),
   idempotencyKey: z.string().trim().min(8).max(200),

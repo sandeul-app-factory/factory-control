@@ -311,6 +311,9 @@ model PrdVersion {
   acceptanceCriteria     Json
   includedArtifactIds    Json
   excludedScope          Json
+  constraintSnapshot     Json?
+  decisionSnapshot       Json?
+  lockMetadata           Json?
   approvedBy             String?    @db.Uuid
   approvedAt             DateTime?
   lockedBy               String?    @db.Uuid

@@ -143,12 +143,7 @@ services:
         condition: service_healthy
     healthcheck:
       test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://localhost:3000').then(r=>{if(!r.ok)process.exit(1)})",
-        ]
+        ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>{if(!r.ok)process.exit(1)})"]
       interval: 10s
       timeout: 5s
       retries: 12

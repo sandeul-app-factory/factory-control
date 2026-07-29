@@ -38,9 +38,10 @@ export async function apiRequest<T>(
     headers,
     credentials: "include",
   });
-  const payload = (await response.json().catch(() => null)) as
-    | { message?: string | string[]; requestId?: string }
-    | null;
+  const payload = (await response.json().catch(() => null)) as {
+    message?: string | string[];
+    requestId?: string;
+  } | null;
   if (!response.ok) {
     const message = Array.isArray(payload?.message)
       ? payload.message.join(", ")

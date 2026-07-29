@@ -75,8 +75,8 @@ export function LoginScreen({ onLogin }: { onLogin: (state: AuthState) => void }
           </form>
           <div className="mt-5 flex items-start gap-2 border-t border-zinc-800 pt-5 text-xs leading-5 text-zinc-500">
             <ShieldCheck aria-hidden="true" className="mt-0.5 shrink-0 text-zinc-600" size={15} />
-            애플리케이션 인증과 Cloudflare Access를 함께 사용할 수 있습니다. 모든 로그인
-            시도는 감사 기록에 남습니다.
+            애플리케이션 인증과 Cloudflare Access를 함께 사용할 수 있습니다. 모든 로그인 시도는 감사
+            기록에 남습니다.
           </div>
         </Card>
       </div>
