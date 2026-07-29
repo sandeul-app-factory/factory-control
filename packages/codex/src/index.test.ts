@@ -41,11 +41,19 @@ describe("Codex execution contract", () => {
         workspacePath: "/tmp/fake",
         outputPath: "/tmp/result.json",
         outputSchemaPath: "/tmp/schema.json",
+        acceptanceCriteria: ["passes"],
         signal: controller.signal,
       },
       event,
     );
     expect(result.result.status).toBe("SUCCEEDED");
+    expect(result.result.acceptanceCriteria).toEqual([
+      {
+        criterion: "passes",
+        status: "PASSED",
+        evidence: "FakeCodexAdapter E2E 검증",
+      },
+    ]);
     expect(event).toHaveBeenCalledTimes(4);
   });
 });

@@ -7,7 +7,13 @@ import { buildCodexPrompt, createCodexAdapter } from "@sandeul/codex";
 import { createGithubAdapter } from "@sandeul/github";
 import { assertProjectTransition } from "@sandeul/contracts";
 import type { ProjectStatus } from "@sandeul/contracts";
-import { sha256 } from "@sandeul/security";
+import { evaluateReleaseGate, sha256 } from "@sandeul/security";
+import { storePipelineArtifact } from "./artifact-writer.js";
+import {
+  runAndroidPipeline,
+  type AndroidPipelineResult,
+  type PipelineArtifact,
+} from "./android-pipeline.js";
 import {
   changedPaths,
   enforcePathPolicy,
@@ -138,6 +144,249 @@ async function audit(
       metadata: metadata ?? Prisma.JsonNull,
     },
   });
+}
+
+function jsonArtifact(name: string, value: unknown): PipelineArtifact {
+  const buffer = Buffer.from(JSON.stringify(value, null, 2), "utf8");
+  return { name, mimeType: "application/json", buffer, sha256: sha256(buffer) };
+}
+
+async function recordPipelineResult(input: {
+  projectId: string;
+  taskId: string;
+  runId: string;
+  actorId: string;
+  commitSha: string;
+  prdId: string;
+  prdSha256: string;
+  acceptanceCriteria: string[];
+  acceptanceEvidence: Array<{
+    criterion: string;
+    status: "PASSED" | "FAILED" | "NOT_VERIFIED";
+    evidence: string;
+  }>;
+  pipeline: AndroidPipelineResult;
+  requestId: string;
+}): Promise<{ gatePassed: boolean; releaseId: string; testPassed: boolean }> {
+  const acceptanceResults = input.acceptanceCriteria.map(
+    (criterion) =>
+      input.acceptanceEvidence.find((evidence) => evidence.criterion === criterion) ?? {
+        criterion,
+        status: "NOT_VERIFIED" as const,
+        evidence: "Codex 완료 보고에 정확히 일치하는 Acceptance Criteria 증거가 없습니다.",
+      },
+  );
+  const acceptanceCriteriaMet = acceptanceResults.every((evidence) => evidence.status === "PASSED");
+  const metadata = {
+    developmentTaskId: input.taskId,
+    codexRunId: input.runId,
+    commitSha: input.commitSha,
+  } as Prisma.InputJsonValue;
+  const effectiveTestStatus =
+    input.pipeline.testStatus === "PASSED" && acceptanceCriteriaMet ? "PASSED" : "FAILED";
+  const testReport = await storePipelineArtifact({
+    projectId: input.projectId,
+    actorId: input.actorId,
+    kind: "TEST_REPORT",
+    logicalFolder: "06 Test Reports",
+    artifact: jsonArtifact("android-test-report.json", {
+      commitSha: input.commitSha,
+      status: effectiveTestStatus,
+      acceptanceCriteriaMet,
+      acceptanceEvidence: acceptanceResults,
+      steps: input.pipeline.steps.filter((step) => step.suite === "TEST"),
+    }),
+    metadata,
+  });
+  const securityReport = await storePipelineArtifact({
+    projectId: input.projectId,
+    actorId: input.actorId,
+    kind: "SECURITY_REPORT",
+    logicalFolder: "07 Security Reports",
+    artifact: jsonArtifact("android-security-report.json", {
+      commitSha: input.commitSha,
+      status: input.pipeline.securityStatus,
+      steps: input.pipeline.steps.filter((step) => step.suite === "SECURITY"),
+      findings: input.pipeline.findings,
+    }),
+    metadata,
+  });
+  const sbom = input.pipeline.sbom
+    ? await storePipelineArtifact({
+        projectId: input.projectId,
+        actorId: input.actorId,
+        kind: "SBOM",
+        logicalFolder: "07 Security Reports",
+        artifact: input.pipeline.sbom,
+        metadata,
+      })
+    : null;
+  const buildArtifact = input.pipeline.buildArtifact
+    ? await storePipelineArtifact({
+        projectId: input.projectId,
+        actorId: input.actorId,
+        kind: input.pipeline.buildArtifact.name.toLowerCase().endsWith(".aab") ? "AAB" : "APK",
+        logicalFolder: "08 Builds",
+        artifact: input.pipeline.buildArtifact,
+        metadata,
+      })
+    : null;
+  const testSteps = input.pipeline.steps.filter((step) => step.suite === "TEST");
+  const securitySteps = input.pipeline.steps.filter((step) => step.suite === "SECURITY");
+  const [testRun, securityScan, build] = await prisma.$transaction([
+    prisma.testRun.create({
+      data: {
+        projectId: input.projectId,
+        developmentTaskId: input.taskId,
+        codexRunId: input.runId,
+        commitSha: input.commitSha,
+        status: effectiveTestStatus,
+        command: testSteps
+          .map((step) => step.command)
+          .join(" && ")
+          .slice(0, 500),
+        startedAt: new Date(),
+        finishedAt: new Date(),
+        summary: {
+          source: "FACTORY_ANDROID_PIPELINE",
+          total: testSteps.length + input.acceptanceCriteria.length,
+          passed:
+            testSteps.filter((step) => step.status === "PASSED").length +
+            acceptanceResults.filter((item) => item.status === "PASSED").length,
+          failed:
+            testSteps.filter((step) => step.status === "FAILED").length +
+            acceptanceResults.filter((item) => item.status === "FAILED").length,
+          skipped: acceptanceResults.filter((item) => item.status === "NOT_VERIFIED").length,
+          acceptanceCriteriaMet,
+        },
+        reportArtifactId: testReport.artifactId,
+        results: {
+          create: [
+            ...testSteps.map((step) => ({
+              suite: "Factory Android Pipeline",
+              name: step.name,
+              status: step.status,
+              durationMs: step.durationMs,
+              message: step.message,
+            })),
+            ...acceptanceResults.map((evidence) => ({
+              suite: "Acceptance Criteria",
+              name: evidence.criterion.slice(0, 1000),
+              status:
+                evidence.status === "NOT_VERIFIED"
+                  ? "SKIPPED"
+                  : evidence.status === "PASSED"
+                    ? "PASSED"
+                    : "FAILED",
+              message: evidence.evidence,
+            })),
+          ],
+        },
+      },
+    }),
+    prisma.securityScan.create({
+      data: {
+        projectId: input.projectId,
+        developmentTaskId: input.taskId,
+        commitSha: input.commitSha,
+        scanner: "FACTORY_ANDROID_PIPELINE",
+        status: input.pipeline.securityStatus,
+        startedAt: new Date(),
+        finishedAt: new Date(),
+        summary: {
+          tools: securitySteps.map((step) => ({
+            name: step.name,
+            status: step.status,
+            durationMs: step.durationMs,
+          })),
+          findingCount: input.pipeline.findings.length,
+        },
+        sbomArtifactId: sbom?.artifactId ?? null,
+        reportArtifactId: securityReport.artifactId,
+        findings: {
+          create: input.pipeline.findings.map((finding) => ({
+            fingerprint: finding.fingerprint,
+            severity: finding.severity,
+            ruleId: finding.ruleId,
+            title: finding.title,
+            description: finding.description,
+            remediation: finding.remediation,
+          })),
+        },
+      },
+    }),
+    prisma.build.create({
+      data: {
+        projectId: input.projectId,
+        developmentTaskId: input.taskId,
+        commitSha: input.commitSha,
+        prdSha256: input.prdSha256,
+        status: input.pipeline.buildStatus,
+        buildType: input.pipeline.buildArtifact?.name.toLowerCase().endsWith(".aab")
+          ? "UNSIGNED_RELEASE_AAB"
+          : "DEBUG_APK",
+        signed: false,
+        artifactVersionId: buildArtifact?.artifactVersionId ?? null,
+        artifactSha256: buildArtifact?.sha256 ?? null,
+        startedAt: new Date(),
+        finishedAt: new Date(),
+      },
+    }),
+  ]);
+  const openCritical = input.pipeline.findings.filter(
+    (finding) => finding.severity === "CRITICAL",
+  ).length;
+  const openHigh = input.pipeline.findings.filter((finding) => finding.severity === "HIGH").length;
+  const gate = evaluateReleaseGate({
+    lockedPrd: true,
+    commitMatches:
+      testRun.commitSha === securityScan.commitSha && testRun.commitSha === build.commitSha,
+    prdHashMatches: build.prdSha256 === input.prdSha256,
+    testStatus: testRun.status,
+    testFailures: testSteps.filter((step) => step.status === "FAILED").length,
+    acceptanceCriteriaMet,
+    securityStatus: securityScan.status,
+    openCritical,
+    openHigh,
+    sbomPresent: Boolean(sbom),
+    buildStatus: build.status,
+    buildArtifactPresent: Boolean(buildArtifact),
+    buildArtifactHashMatches:
+      Boolean(buildArtifact) && buildArtifact?.sha256 === build.artifactSha256,
+  });
+  const release = await prisma.release.create({
+    data: {
+      projectId: input.projectId,
+      buildId: build.id,
+      status: gate.passed ? "CANDIDATE" : "GATE_BLOCKED",
+      commitSha: input.commitSha,
+      prdVersionId: input.prdId,
+      prdSha256: input.prdSha256,
+      testRunId: testRun.id,
+      securityScanId: securityScan.id,
+      gateReport: gate as unknown as Prisma.InputJsonValue,
+      createdBy: input.actorId,
+    },
+  });
+  await audit(
+    "AUTOMATED_QUALITY_PIPELINE",
+    input.projectId,
+    input.actorId,
+    "Release",
+    release.id,
+    input.requestId,
+    {
+      testRunId: testRun.id,
+      securityScanId: securityScan.id,
+      buildId: build.id,
+      gate,
+    } as unknown as Prisma.InputJsonValue,
+  );
+  return {
+    gatePassed: gate.passed,
+    releaseId: release.id,
+    testPassed: effectiveTestStatus === "PASSED",
+  };
 }
 
 async function processJob(data: FactoryJobData): Promise<WorkerResult> {
@@ -304,11 +553,17 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
             join(process.cwd(), "schemas/codex/codex-result.schema.json"),
         ),
         outputPath: join(outputDirectory, "codex-result.json"),
+        acceptanceCriteria: jsonStringArray(task.acceptanceCriteria),
         signal: controller.signal,
       },
       (event) =>
         addEvent(run.id, sequence, event.type, event.message, event.payload, event.level ?? "INFO"),
     );
+    if (output.result.status !== "SUCCEEDED") {
+      throw new Error(
+        `Codex가 작업을 완료하지 못했습니다: ${output.result.status} ${output.result.summary}`,
+      );
+    }
     let diff = [
       "diff --git a/app/src/main/java/work/sandeul/factory/FakeFeature.kt b/app/src/main/java/work/sandeul/factory/FakeFeature.kt",
       "new file mode 100644",
@@ -345,6 +600,14 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
         branch: workBranch,
       });
     }
+    const pipeline = await runAndroidPipeline({
+      repositoryPath,
+      outputDirectory,
+      fake,
+      signal: controller.signal,
+      onEvent: (type, message, payload, level) =>
+        addEvent(run.id, sequence, type, message, payload, level ?? "INFO"),
+    });
     const pullRequest = await github.createPullRequest(
       repository.owner,
       repository.name,
@@ -360,7 +623,6 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
       workBranch,
       repository.defaultBranch,
     );
-    const reportedTests = output.result.tests;
     await prisma.$transaction([
       prisma.codexRun.update({
         where: { id: run.id },
@@ -381,49 +643,6 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
         where: { id: task.id },
         data: { status: "SUCCEEDED", version: { increment: 1 } },
       }),
-      ...(reportedTests.length
-        ? [
-            prisma.testRun.create({
-              data: {
-                projectId: project.id,
-                developmentTaskId: task.id,
-                codexRunId: run.id,
-                commitSha,
-                status: reportedTests.every((test) => test.status === "PASSED")
-                  ? "PASSED"
-                  : "FAILED",
-                command: reportedTests
-                  .map((test) => test.command)
-                  .join(" && ")
-                  .slice(0, 500),
-                startedAt: run.startedAt ?? new Date(),
-                finishedAt: new Date(),
-                summary: {
-                  source: "CODEX_RESULT",
-                  total: reportedTests.length,
-                  passed: reportedTests.filter((test) => test.status === "PASSED").length,
-                  failed: reportedTests.filter((test) => test.status === "FAILED").length,
-                  skipped: reportedTests.filter((test) => test.status === "NOT_RUN").length,
-                  acceptanceCriteriaMet: false,
-                  note: "Codex 자체 보고 결과이며 Acceptance Criteria 검증을 대체하지 않습니다.",
-                },
-                results: {
-                  create: reportedTests.map((test) => ({
-                    suite: "Codex reported tests",
-                    name: test.command,
-                    status:
-                      test.status === "PASSED"
-                        ? "PASSED"
-                        : test.status === "FAILED"
-                          ? "FAILED"
-                          : "SKIPPED",
-                    message: test.summary,
-                  })),
-                },
-              },
-            }),
-          ]
-        : []),
     ]);
     await addEvent(
       run.id,
@@ -445,14 +664,59 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
       url: pullRequest.htmlUrl,
       commitSha,
     });
-    if (reportedTests.length) {
-      await audit("TEST_RUN_RECORD", project.id, task.createdBy, "CodexRun", run.id, requestId, {
-        source: "CODEX_RESULT",
-        status: reportedTests.every((test) => test.status === "PASSED") ? "PASSED" : "FAILED",
-        count: reportedTests.length,
-        acceptanceCriteriaMet: false,
-      });
+    const quality = await recordPipelineResult({
+      projectId: project.id,
+      taskId: task.id,
+      runId: run.id,
+      actorId: task.createdBy,
+      commitSha,
+      prdId: prd.id,
+      prdSha256: prd.sha256,
+      acceptanceCriteria: jsonStringArray(task.acceptanceCriteria),
+      acceptanceEvidence: output.result.acceptanceCriteria,
+      pipeline,
+      requestId,
+    });
+    if (quality.testPassed) {
+      await transitionProject(
+        project.id,
+        "QA_TESTING",
+        task.createdBy,
+        task.id,
+        requestId,
+        "독립 테스트와 Acceptance Criteria 검증 완료",
+      );
     }
+    if (quality.testPassed && pipeline.securityStatus === "PASSED") {
+      await transitionProject(
+        project.id,
+        "SECURITY_REVIEW",
+        task.createdBy,
+        task.id,
+        requestId,
+        "Android 보안검사와 SBOM 생성 완료",
+      );
+    }
+    if (quality.gatePassed) {
+      await transitionProject(
+        project.id,
+        "RELEASE_CANDIDATE",
+        task.createdBy,
+        task.id,
+        requestId,
+        `자동 Release Gate 통과: ${quality.releaseId}`,
+      );
+    }
+    await addEvent(
+      run.id,
+      sequence,
+      quality.gatePassed ? "release_gate.passed" : "release_gate.blocked",
+      quality.gatePassed
+        ? "테스트·보안검사·SBOM·빌드 Gate를 통과해 CEO Release Candidate 승인 대기 상태가 되었습니다."
+        : "자동 품질 파이프라인은 완료됐지만 Release Gate가 차단되었습니다.",
+      { releaseId: quality.releaseId },
+      quality.gatePassed ? "INFO" : "WARN",
+    );
     return { commitSha, pullRequestUrl: pullRequest.htmlUrl };
   } catch (error) {
     const cancelled =

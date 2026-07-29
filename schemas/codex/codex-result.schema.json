@@ -9,6 +9,7 @@
     "summary",
     "changedFiles",
     "tests",
+    "acceptanceCriteria",
     "assumptions",
     "questions",
     "incompleteItems",
@@ -51,6 +52,25 @@
             "enum": ["PASSED", "FAILED", "NOT_RUN"]
           },
           "summary": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["criterion", "status", "evidence"],
+        "properties": {
+          "criterion": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["PASSED", "FAILED", "NOT_VERIFIED"]
+          },
+          "evidence": {
             "type": "string"
           }
         }

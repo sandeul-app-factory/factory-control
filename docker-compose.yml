@@ -155,6 +155,7 @@ services:
     restart: unless-stopped
 
   worker-workspace-init:
+    profiles: ["fake-worker"]
     image: sandeul-factory-dev-worker:latest
     user: "0:0"
     entrypoint: ["sh", "-c", "chown -R node:node /var/lib/factory-workspaces"]
@@ -163,6 +164,7 @@ services:
     restart: "no"
 
   worker:
+    profiles: ["fake-worker"]
     image: sandeul-factory-dev-worker:latest
     build:
       context: .
@@ -188,6 +190,15 @@ services:
       GITHUB_PRIVATE_KEY_BASE64: ${GITHUB_PRIVATE_KEY_BASE64:-}
       GITHUB_FINE_GRAINED_PAT: ${GITHUB_FINE_GRAINED_PAT:-}
       GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_BUCKET: ${S3_BUCKET:-factory-artifacts}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_FORCE_PATH_STYLE: "true"
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-536870912}
+      MAX_BUILD_ARTIFACT_BYTES: ${MAX_BUILD_ARTIFACT_BYTES:-536870912}
     volumes:
       - factory_workspaces:/var/lib/factory-workspaces
     depends_on:
@@ -195,6 +206,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
       worker-workspace-init:
         condition: service_completed_successfully
     restart: unless-stopped

@@ -219,6 +219,9 @@ importers:
       '@sandeul/security':
         specifier: workspace:*
         version: link:../../packages/security
+      '@sandeul/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       bullmq:
         specifier: 5.81.2
         version: 5.81.2

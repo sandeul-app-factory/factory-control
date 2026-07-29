@@ -50,6 +50,13 @@ export const codexResultSchema = z.object({
       summary: z.string(),
     }),
   ),
+  acceptanceCriteria: z.array(
+    z.object({
+      criterion: z.string(),
+      status: z.enum(["PASSED", "FAILED", "NOT_VERIFIED"]),
+      evidence: z.string(),
+    }),
+  ),
   assumptions: z.array(z.string()),
   questions: z.array(z.string()),
   incompleteItems: z.array(z.string()),
@@ -62,6 +69,7 @@ export interface CodexExecutionInput {
   workspacePath: string;
   outputSchemaPath: string;
   outputPath: string;
+  acceptanceCriteria: string[];
   signal: AbortSignal;
 }
 
@@ -143,6 +151,11 @@ export function buildCodexPrompt(context: CodexPromptContext): {
     "## Approved test commands",
     context.testCommands.map((command) => `- ${command}`).join("\n"),
     "",
+    "## Acceptance Criteria evidence",
+    "- 완료 보고의 acceptanceCriteria 배열에 위 Task의 각 기준 문자열을 정확히 한 번씩 복사한다.",
+    "- 각 기준은 PASSED, FAILED, NOT_VERIFIED 중 하나와 재현 가능한 검증 근거를 기록한다.",
+    "- 증거가 없으면 PASSED로 표시하지 않는다.",
+    "",
     "완료 보고는 제공된 JSON Schema를 정확히 따라야 한다.",
   ].join("\n");
   return { prompt, sha256: sha256(prompt) };
@@ -168,6 +181,11 @@ export class FakeCodexAdapter implements CodexAdapter {
         { path: "app/src/main/java/work/sandeul/factory/FakeFeature.kt", reason: "E2E 검증" },
       ],
       tests: [{ command: "./gradlew test", status: "PASSED", summary: "Fake test passed" }],
+      acceptanceCriteria: input.acceptanceCriteria.map((criterion) => ({
+        criterion,
+        status: "PASSED",
+        evidence: "FakeCodexAdapter E2E 검증",
+      })),
       assumptions: [],
       questions: [],
       incompleteItems: [],

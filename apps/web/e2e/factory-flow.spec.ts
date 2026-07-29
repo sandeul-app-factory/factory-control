@@ -23,6 +23,7 @@ interface PrdVersion extends JsonRecord {
 
 interface Artifact extends JsonRecord {
   id: string;
+  kind: string;
   versions: Array<{ id: string; sha256: string }>;
 }
 
@@ -46,6 +47,79 @@ interface SecurityScan extends JsonRecord {
 interface Release extends JsonRecord {
   id: string;
   status: string;
+}
+
+function buildReadyMarkdown(detail: string): string {
+  return `# Factory E2E Android Build-ready PRD
+
+## 문서 메타데이터
+- Schema: android-build-ready/v1
+- 담당자: 산들, 수빈
+- 문서 버전: 1.0.0
+
+## 제품 정의
+${detail}
+
+## 출시 범위
+- 핵심 흐름 E2E
+- 실제 Android signing 제외
+
+## 사용자 여정
+- 앱 실행 → 핵심 액션 → 결과 확인
+
+## 화면 명세
+- SCR-001 홈: INITIAL, LOADING, CONTENT, EMPTY, ERROR, OFFLINE
+
+## 기능 요구사항
+- FR-001 핵심 액션을 중복 없이 실행한다.
+
+## 데이터 명세
+- 민감정보를 저장하지 않는다.
+
+## API 명세
+- 외부 API 없음
+
+## Android 기술 기준
+- applicationId: work.sandeul.factorye2e
+- minSdk: 23
+- targetSdk: 36
+- compileSdk: 36
+- Java toolchain: 17
+
+## 권한
+- Android runtime permission 없음
+
+## 보안
+- release debuggable: false
+- TLS 우회 금지
+- signing key 접근 금지
+
+## 개인정보
+- 개인정보 수집 없음
+
+## 디자인
+- Material 3
+
+## 빌드
+- ./gradlew assembleDebug
+- ./gradlew bundleRelease
+
+## 테스트
+- Unit, Android Lint, detekt, ktlint, 설치 Smoke Test
+
+## Acceptance Criteria
+- 핵심 흐름 E2E 통과
+- Release Gate 통과
+
+## Release Gate
+- CRITICAL 0, HIGH 0, SBOM 필수
+
+## 가정 및 미결정 사항
+- 실제 signing은 별도 Worker 범위
+
+## 위험
+- 외부 스토어 심사 일정
+`;
 }
 
 async function api<T>(
@@ -100,25 +174,6 @@ async function uploadPrd(
   });
 }
 
-async function uploadArtifact(
-  request: APIRequestContext,
-  csrfToken: string,
-  projectId: string,
-  kind: "SBOM" | "APK",
-  folder: "07 Security Reports" | "08 Builds",
-  file: { name: string; mimeType: string; buffer: Buffer },
-) {
-  return api<Artifact>(
-    request,
-    `/projects/${projectId}/artifacts/${kind}/${encodeURIComponent(folder)}`,
-    {
-      method: "POST",
-      headers: { "x-csrf-token": csrfToken },
-      multipart: { file },
-    },
-  );
-}
-
 async function openProject(page: Page, projectName: string) {
   await page.reload();
   await expect(page.getByRole("heading", { name: "앱 제작 현황" })).toBeVisible();
@@ -160,14 +215,14 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
     auth.csrfToken,
     project!.id,
     "prd-v1.md",
-    "# Factory E2E\n\n## 목표\n\n초기 요구사항",
+    buildReadyMarkdown("초기 요구사항"),
   );
   const prd2 = await uploadPrd(
     request,
     auth.csrfToken,
     project!.id,
     "prd-v2.md",
-    "# Factory E2E\n\n## 목표\n\n코멘트와 조건부 승인을 포함한 요구사항",
+    buildReadyMarkdown("코멘트와 조건부 승인을 포함한 요구사항"),
   );
   expect(prd2.versionNumber).toBe(prd1.versionNumber + 1);
 
@@ -220,7 +275,7 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
     auth.csrfToken,
     project!.id,
     "prd-v3.md",
-    "# Factory E2E\n\n## 목표\n\n보안 제약과 Release Gate가 반영된 최종 요구사항",
+    buildReadyMarkdown("보안 제약과 Release Gate가 반영된 최종 요구사항"),
   );
   await api(request, `/prd-versions/${prd3.id}/request-review`, mutation(auth.csrfToken));
   await api(request, `/prd-versions/${prd3.id}/approvals`, {
@@ -245,31 +300,22 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
   await expect(main.getByText("PRD v3", { exact: true })).toBeVisible();
   await expect(main.getByText("LOCKED", { exact: true }).first()).toBeVisible();
 
-  const repository = await api<{ id: string; defaultBranch: string }>(
-    request,
-    `/projects/${project!.id}/repository/create`,
-    {
-      ...mutation(auth.csrfToken, {
-        owner: "sandeul-e2e",
-        name: slug,
-        description: "Fake GitHub Adapter E2E",
-        private: true,
-      }),
-    },
-  );
-  const task = await api<TaskDetail>(request, `/projects/${project!.id}/tasks`, {
+  const repository = await api<{
+    id: string;
+    defaultBranch: string;
+    development: { prepared: boolean; task: TaskDetail };
+  }>(request, `/projects/${project!.id}/repository/create`, {
     ...mutation(auth.csrfToken, {
-      type: "IMPLEMENT_PRD",
-      title: "잠긴 PRD 구현",
-      instruction: "잠긴 PRD의 승인 범위만 구현하고 결과를 구조화해 보고합니다.",
-      acceptanceCriteria: ["핵심 흐름 E2E 통과", "Release Gate 통과"],
-      targetRepositoryId: repository.id,
-      targetBranch: repository.defaultBranch,
-      allowedPaths: ["app/**", "docs/**"],
-      deniedPaths: ["infra/**"],
-      idempotencyKey: `e2e-${suffix}-implement`,
+      owner: "sandeul-e2e",
+      name: slug,
+      description: "Fake GitHub Adapter E2E",
+      private: true,
     }),
   });
+  expect(repository.development.prepared).toBe(true);
+  const task = repository.development.task;
+  expect(task.status).toBe("DRAFT");
+  await api<TaskDetail>(request, `/tasks/${task.id}/start`, mutation(auth.csrfToken));
 
   await expect
     .poll(async () => (await api<TaskDetail>(request, `/tasks/${task.id}`)).status, {
@@ -290,100 +336,32 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
   await expect(main.getByRole("heading", { name: "Git diff" })).toBeVisible();
   await expect(main.getByText("FakeCodexAdapter E2E artifact")).toBeVisible();
 
-  const testRun = await api<{ id: string }>(request, `/projects/${project!.id}/test-runs`, {
-    ...mutation(auth.csrfToken, {
-      commitSha,
-      developmentTaskId: task.id,
-      codexRunId: completedRun!.id,
-      status: "PASSED",
-      command: "pnpm test && pnpm typecheck",
-      summary: {
-        total: 2,
-        passed: 2,
-        failed: 0,
-        skipped: 0,
-        acceptanceCriteriaMet: true,
-      },
-      results: [
-        { suite: "Factory E2E", name: "핵심 흐름", status: "PASSED" },
-        { suite: "Factory E2E", name: "Release Gate 입력", status: "PASSED" },
-      ],
-    }),
-  });
-  const sbom = await uploadArtifact(
-    request,
-    auth.csrfToken,
-    project!.id,
-    "SBOM",
-    "07 Security Reports",
-    {
-      name: "factory-e2e.spdx.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(
-        JSON.stringify({
-          SPDXID: "SPDXRef-DOCUMENT",
-          spdxVersion: "SPDX-2.3",
-          name: projectName,
-        }),
-      ),
-    },
-  );
-  const scan = await api<SecurityScan>(request, `/projects/${project!.id}/security-scans`, {
-    ...mutation(auth.csrfToken, {
-      commitSha,
-      developmentTaskId: task.id,
-      scanner: "COMPOSITE",
-      status: "PASSED",
-      sbomArtifactId: sbom.id,
-      findings: [
-        {
-          fingerprint: `e2e-info-${suffix}`,
-          severity: "INFO",
-          ruleId: "FACTORY-E2E-INFO",
-          title: "E2E informational finding",
-          description: "Release를 차단하지 않는 추적용 Finding입니다.",
-          remediation: "운영 검토 기록을 유지합니다.",
-        },
-      ],
-    }),
-  });
-  const apk = await uploadArtifact(request, auth.csrfToken, project!.id, "APK", "08 Builds", {
-    name: "factory-e2e.apk",
-    mimeType: "application/vnd.android.package-archive",
-    buffer: Buffer.from("UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==", "base64"),
-  });
-  const build = await api<{ id: string }>(request, `/projects/${project!.id}/builds`, {
-    ...mutation(auth.csrfToken, {
-      commitSha,
-      developmentTaskId: task.id,
-      status: "SUCCEEDED",
-      buildType: "UNSIGNED_RELEASE",
-      artifactVersionId: apk.versions[0]!.id,
-    }),
-  });
-  const gateInput = {
-    buildId: build.id,
-    testRunId: testRun.id,
-    securityScanId: scan.id,
-  };
-  const gate = await api<{ passed: boolean }>(
-    request,
-    `/projects/${project!.id}/release-gate`,
-    mutation(auth.csrfToken, gateInput),
-  );
-  expect(gate.passed).toBe(true);
-  const release = await api<Release>(
-    request,
-    `/projects/${project!.id}/releases`,
-    mutation(auth.csrfToken, gateInput),
-  );
+  const [testRuns, scans, builds, releases, artifacts] = await Promise.all([
+    api<Array<{ id: string; commitSha: string; status: string }>>(
+      request,
+      `/projects/${project!.id}/test-runs`,
+    ),
+    api<SecurityScan[]>(request, `/projects/${project!.id}/security-scans`),
+    api<Array<{ id: string; commitSha: string; status: string; artifactVersionId: string }>>(
+      request,
+      `/projects/${project!.id}/builds`,
+    ),
+    api<Release[]>(request, `/projects/${project!.id}/releases`),
+    api<Artifact[]>(request, `/projects/${project!.id}/artifacts`),
+  ]);
+  expect(testRuns.find((run) => run.commitSha === commitSha)?.status).toBe("PASSED");
+  expect(scans.find((scan) => scan.commitSha === commitSha)?.status).toBe("PASSED");
+  expect(builds.find((build) => build.commitSha === commitSha)?.status).toBe("SUCCEEDED");
+  const release = releases.find((item) => item.commitSha === commitSha)!;
   expect(release.status).toBe("CANDIDATE");
+  const apk = artifacts.find((artifact) => artifact.kind === "APK")!;
+  expect(apk).toBeDefined();
 
   await openProject(page, projectName);
   await main.getByRole("button", { name: "테스트", exact: true }).click();
   await expect(main.getByText("Acceptance Criteria: 충족")).toBeVisible();
   await main.getByRole("button", { name: "보안", exact: true }).click();
-  await expect(main.getByText("E2E informational finding")).toBeVisible();
+  await expect(main.getByText("FACTORY_ANDROID_PIPELINE")).toBeVisible();
   await main.getByRole("button", { name: "빌드", exact: true }).click();
   await expect(main.getByText("CANDIDATE", { exact: true })).toBeVisible();
   await main.getByPlaceholder("최종 승인 사유").fill("E2E 검증 결과 Release Candidate 승인");
