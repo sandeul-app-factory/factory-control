@@ -71,6 +71,7 @@ gateway가 포함된다. Real Codex Worker는 전용 OS 사용자와 systemd로 
 실행한다. Cloudflare Tunnel은 gateway의 `127.0.0.1:8080`에만 연결한다.
 
 - [운영 배포](docs/operations/deployment.md)
+- [CEO 사용설명서](docs/operations/factory-user-guide.md)
 - [Secret 설정](docs/operations/secrets.md)
 - [Cloudflare 연결](docs/operations/cloudflare.md)
 - [Codex Worker](docs/operations/codex-worker.md)
