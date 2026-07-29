@@ -442,7 +442,7 @@ function ApprovalModal({
     <Modal
       open={open}
       title={`PRD v${prd.versionNumber} 승인 결정`}
-      description="결정의 범위와 사유는 감사 로그와 승인 이력에 영구 기록됩니다."
+      description="결정의 범위와 사유는 영구 기록됩니다. 최종 승인을 선택하면 이 PRD 버전이 즉시 잠깁니다."
       onClose={onClose}
     >
       <form
@@ -1390,7 +1390,11 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
               </div>
             ))
           ) : (
-            <span className="text-zinc-600">Worker 이벤트를 기다리는 중입니다.</span>
+            <span className="text-zinc-600">
+              {data.status === "DRAFT"
+                ? "PRD가 전달됐습니다. 검토 후 개발 시작을 눌러주세요."
+                : "Worker 이벤트를 기다리는 중입니다."}
+            </span>
           )}
         </div>
       </Card>
@@ -1528,7 +1532,7 @@ function TasksPanel({ project, auth }: { project: Project; auth: AuthState }) {
         </Card>
         {canCreate ? (
           <Card className="p-4">
-            <h3 className="font-semibold">새 Codex 작업</h3>
+            <h3 className="font-semibold">추가 Codex 작업 초안</h3>
             <form
               className="mt-4 grid gap-3"
               onSubmit={(event) => {
@@ -1578,7 +1582,7 @@ function TasksPanel({ project, auth }: { project: Project; auth: AuthState }) {
               />
               <ErrorNotice error={create.error} />
               <Button disabled={create.isPending} type="submit">
-                {create.isPending ? "대기열 등록 중…" : "Codex 작업 생성"}
+                {create.isPending ? "초안 생성 중…" : "Codex 작업 초안 생성"}
               </Button>
             </form>
           </Card>

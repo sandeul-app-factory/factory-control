@@ -1,9 +1,16 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const reportRoot = join(process.cwd(), "generated", "security");
 mkdirSync(reportRoot, { recursive: true });
+const pnpmCommand =
+  process.platform === "win32"
+    ? {
+        command: process.execPath,
+        args: [join(dirname(process.execPath), "node_modules", "corepack", "dist", "pnpm.js")],
+      }
+    : { command: "pnpm", args: [] };
 
 const checks = [
   {
@@ -72,8 +79,8 @@ const checks = [
   },
   {
     name: "Dependency licenses",
-    command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-    args: ["licenses", "list", "--json"],
+    command: pnpmCommand.command,
+    args: [...pnpmCommand.args, "licenses", "list", "--json"],
     report: "licenses.json",
   },
 ];

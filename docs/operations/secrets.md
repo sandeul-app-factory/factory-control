@@ -37,8 +37,8 @@ MCP credential token은 설정 화면 또는 CLI에서 한 번만 표시된다. 
 
 ```bash
 export ADMIN_LOGIN_ID=existing-ceo
-export MCP_CREDENTIAL_NAME=chatgpt-readonly
-export MCP_CREDENTIAL_SCOPES=factory.list_projects,factory.get_project,factory.get_project_status
+export MCP_CREDENTIAL_NAME=chatgpt-prd
+export MCP_CREDENTIAL_SCOPES=factory.get_prd_schema,factory.list_projects,factory.get_project,factory.get_project_status,factory.create_project,factory.upload_prd,factory.create_prd_version,factory.request_prd_review
 export MCP_CREDENTIAL_RATE_LIMIT=30
 pnpm mcp:create-credential
 unset MCP_CREDENTIAL_NAME MCP_CREDENTIAL_SCOPES MCP_CREDENTIAL_RATE_LIMIT

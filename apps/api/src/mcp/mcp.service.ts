@@ -126,7 +126,7 @@ export class McpService {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "sandeul-app-factory", version: "2.0.0" },
           instructions:
-            "Factory domain tools only. Locked PRD and CEO governance remain authoritative.",
+            "Factory domain tools only. Before writing or uploading a PRD, call factory.get_prd_schema and satisfy the returned latest schema. PRD upload never implies CEO approval, lock, or development start. Locked PRD and CEO governance remain authoritative.",
         };
       } else if (parsed.method === "server/discover") {
         result = {

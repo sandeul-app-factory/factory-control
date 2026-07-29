@@ -1,8 +1,8 @@
 # Sandeul App Factory v2
 
-Android 앱 제작 공장의 중앙 Control Plane이다. ChatGPT에서 작성한 PRD를 사용자가 직접
-업로드하고, CEO가 요구사항·개발·테스트·보안·릴리스를 통제한다. Factory 백엔드는
-OpenAI API를 호출하지 않는다.
+Android 앱 제작 공장의 중앙 Control Plane이다. ChatGPT가 MCP에서 최신 Build-ready
+PRD Schema를 조회하고 완성된 PRD를 업로드할 수 있으며, CEO가 요구사항·개발·테스트·
+보안·릴리스를 통제한다. Factory 백엔드는 OpenAI API를 호출하지 않는다.
 
 ## 구현 범위
 
@@ -13,6 +13,7 @@ OpenAI API를 호출하지 않는다.
 - PostgreSQL/Prisma metadata, Redis/BullMQ 작업, MinIO/S3 artifact
 - GitHub App 우선 Adapter와 fine-grained PAT/Fake Adapter
 - Fake/Real Codex Adapter, 별도 Worker, JSONL/SSE, 취소·재시도·DLQ, workspace 격리
+- 개발 시작 한 번으로 Codex→독립 테스트→보안검사→SBOM→APK/AAB→Release Gate 실행
 - Release Gate, Android 정적 보안 규칙, Signing Worker interface와 비활성 Stub
 - 기본 비활성 Streamable HTTP MCP endpoint와 Factory domain tool allowlist
 - 개발/운영 Docker Compose, host Worker systemd, `factory.sandeul.work` cloudflared template
@@ -25,6 +26,22 @@ OpenAI API를 호출하지 않는다.
 cp .env.example .env
 # .env의 빈 Secret을 안전한 값으로 채운다.
 docker compose --env-file .env up -d --build
+```
+
+기본 Compose는 Real Codex Worker를 컨테이너에서 실행하지 않는다. Windows 개발
+호스트에서는 로그인된 Codex CLI를 다음 스크립트로 실행한다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\infra\scripts\start-real-worker.ps1 -CheckOnly
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\infra\scripts\start-real-worker.ps1
+```
+
+FakeCodexAdapter E2E용 Worker만 필요한 경우:
+
+```bash
+docker compose --profile fake-worker up -d --build
 ```
 
 개발 기본 주소:

@@ -2,10 +2,9 @@
 
 ## 목적
 
-Sandeul App Factory v2는 Android 앱 제작 과정의 중앙 Control Plane이다. 제품 요구사항은
-ChatGPT에서 작성한 PRD를 사람이 업로드하고 승인하며, Factory는 승인된 요구사항을
-GitHub와 Codex 실행 작업으로 안전하게 전달한다. Factory 백엔드는 OpenAI API를 호출하지
-않는다.
+Sandeul App Factory v2는 Android 앱 제작 과정의 중앙 Control Plane이다. ChatGPT는
+MCP에서 최신 PRD Schema를 읽고 Canonical PRD를 업로드할 수 있으며, CEO는 Factory에서
+승인·잠금·개발 시작을 통제한다. Factory 백엔드는 OpenAI API를 호출하지 않는다.
 
 ## 시스템 경계
 
@@ -34,7 +33,8 @@ Next.js Web ───── REST + SSE ───── NestJS API
 
 - `apps/web`: 한국어 CEO Control Center. 인증 화면, 프로젝트/PRD/Task/검토 UI.
 - `apps/api`: 권한, 입력 검증, 상태 전환, 감사, REST/OpenAPI, SSE, MCP endpoint.
-- `apps/worker`: BullMQ 소비자. Repository workspace와 Codex CLI를 격리해 실행.
+- `apps/worker`: BullMQ 소비자. Repository workspace와 Codex CLI를 격리하고 독립
+  테스트·보안검사·SBOM·APK/AAB·Release Gate를 연속 실행.
 - `packages/contracts`: API DTO, enum, Zod schema, 상태 머신의 단일 정의.
 - `packages/database`: Prisma schema/client, seed 및 관리자 CLI.
 - `packages/ui`: 접근성 높은 공통 UI primitive.
@@ -70,7 +70,8 @@ Next.js Web ───── REST + SSE ───── NestJS API
 
 ## 배포 경계
 
-- 개발: `docker-compose.yml`에서 Web, API, PostgreSQL, Redis, MinIO, Fake Worker 실행.
+- 개발: 기본 `docker-compose.yml`에서 Web, API, PostgreSQL, Redis, MinIO 실행.
+- Fake E2E: 명시적인 `fake-worker` Compose profile에서만 Fake Worker 실행.
 - 운영: `docker-compose.prod.yml`에서 상태 저장 서비스와 Web/API 실행.
 - Codex Worker: 전용 OS 사용자와 `/srv/factory-workspaces`를 사용하는 systemd 서비스.
 - Cloudflare Tunnel: `infra/cloudflared/config.yaml.example`에서

@@ -21,6 +21,14 @@ debuggable, cleartext, exported component, WebView, TLS 우회, 하드코딩 Sec
 고위험 패턴을 검사한다. 이는 Android Lint, Semgrep, MobSF를 대체하지 않고 빠른
 fail-fast 방어층으로 사용한다.
 
+Real Codex 작업은 구현 완료 후 Worker가 위 검사를 자동 실행한다. Gitleaks, Semgrep,
+Trivy, OSV-Scanner, Syft 중 하나라도 설치되지 않았거나 실행에 실패하면 HIGH Finding을
+생성하고 Release Gate를 차단한다. MobSF Endpoint 미설정은 현재 INFO로 기록하며 실제
+Signing Worker 도입 전에 운영 정책에 따라 필수 Gate로 승격한다.
+
+Worker는 `assembleDebug`, `bundleRelease` 뒤 전용 Emulator에 debug APK를 설치한다.
+`ANDROID_SMOKE_TEST_SERIAL` 미설정, offline device, 설치 실패는 Test Run 실패다.
+
 ## Severity and gate
 
 - CRITICAL: Release 차단, 위험 수용 불가

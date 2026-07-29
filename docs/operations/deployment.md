@@ -74,6 +74,10 @@ curl --fail http://127.0.0.1:8080/api/health
 공개하지 않는다. 다른 S3 공급자를 사용하면 `S3_PUBLIC_ENDPOINT`를 그 공급자의
 브라우저 접근 endpoint로 바꾼다.
 
+호스트에서 실행하는 Codex Worker는 `CODEX_HOST_S3_ENDPOINT`로 번들 MinIO에
+접속한다. 운영 Compose의 `MINIO_API_PORT`와 `MINIO_CONSOLE_PORT`는
+`127.0.0.1`에만 바인딩되므로 외부에 직접 공개되지 않는다.
+
 ## 안전한 갱신
 
 1. DB와 Object Storage를 백업하고 복구 테스트 결과를 확인한다.

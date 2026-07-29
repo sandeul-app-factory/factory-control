@@ -1,584 +1,413 @@
 # Sandeul App Factory CEO 사용설명서
 
-이 문서는 `factory.sandeul.work`에서 프로젝트를 만들고 PRD를 확정한 뒤 Codex로
-개발하고, Pull Request·테스트·보안검사·Android 빌드·Release Candidate를 검토하는
-전체 절차를 설명한다.
+이 문서는 ChatGPT에서 PRD를 만들고 Factory에 업로드한 뒤, CEO 승인 한 번과 개발 시작
+한 번으로 Codex 개발·독립 테스트·보안검사·SBOM·Android 빌드·Release Candidate
+생성까지 진행하는 절차를 설명한다.
 
-## 1. 먼저 알아야 할 운영 경계
+## 1. 역할과 승인 경계
 
-- ChatGPT가 PRD를 작성하고 Factory는 완성된 `.md` 또는 검증 가능한 `.json`을
-  업로드받는다. Factory가 OpenAI API로 PRD를 자동 생성하지는 않는다.
-- GitHub가 소스코드의 유일한 원본이다. Factory는 PRD, 실행 로그, 보고서, Artifact,
-  Commit SHA와 Hash를 관리한다.
-- `CODEX_ADAPTER=fake`이면 개발·테스트·PR 결과가 모의 데이터다. 실제 개발에는 API와
-  전용 Worker 모두 `CODEX_ADAPTER=real`이어야 한다.
-- Production Compose에는 Codex Worker가 포함되지 않는다. Worker는 전용 OS 사용자로
-  호스트에서 별도 실행한다.
-- Codex가 완료 보고서에 기록한 테스트는 참고 기록이며 Acceptance Criteria를 자동
-  충족시키지 않는다. 승인된 CI/Test Adapter가 최종 Test Run을 제출해야 한다.
+- ChatGPT는 PM이다. 시장조사와 제품 판단을 거쳐 PRD를 작성한다.
+- Factory 백엔드는 OpenAI API를 호출하지 않는다.
+- MCP를 연결하면 ChatGPT가 Factory의 최신 PRD Schema를 읽고 PRD를 직접 업로드할 수
+  있다.
+- CEO만 최종 PRD 승인, 개발 시작, 위험 수용, Release Candidate 승인을 할 수 있다.
+- Codex는 잠긴 PRD와 승인 기록을 변경하지 않고 구현만 담당한다.
+- GitHub가 소스코드의 유일한 원본이다.
 - Factory는 Pull Request를 자동 병합하지 않는다.
-- 실제 Signing Worker는 아직 Stub이다. 현재는 unsigned 또는 debug APK/AAB까지만
-  다룬다.
+- Codex Worker에는 실제 Android signing key가 없다.
 
 ## 2. 전체 흐름
 
 ```text
-ChatGPT에서 PRD 작성
-  → 프로젝트 생성
-  → PRD v1 업로드
-  → 코멘트·CEO 제약사항·Decision Record
+ChatGPT PM 조사·PRD 작성
+  → MCP Schema 조회
+  → Factory 프로젝트 생성/선택
+  → PRD DRAFT 업로드
+  → CEO 코멘트·제약사항·Decision Record
   → 검토 요청
-  → 조건부 승인 또는 수정 요청
-  → 수정 PRD 새 버전 업로드
-  → 최종 승인
-  → PRD 잠금
+  → 조건부 승인/수정 요청/반려 또는 최종 승인
+  → 최종 승인 시 PRD 자동 잠금
   → GitHub Repository 생성 또는 연결
-  → Codex Development Task 생성
-  → Worker 실행·로그 확인
-  → Git diff·Commit·Pull Request 검토
-  → 승인된 Test Run 제출
-  → Security Scan·SBOM 제출
-  → APK/AAB Build 제출
+  → IMPLEMENT_PRD 작업이 DRAFT로 자동 생성
+  → CEO가 개발 시작
+  → Codex 구현
+  → Commit·Branch push·Pull Request 생성
+  → 독립 Gradle 테스트·Acceptance Criteria 검증
+  → Android·Gitleaks·Semgrep·Trivy·OSV 보안검사
+  → SPDX SBOM 생성
+  → Debug APK·unsigned AAB 빌드
+  → 전용 Emulator APK 설치 Smoke Test
   → Release Gate
-  → Release Candidate 최종 승인
-  → Signing Worker 요청(현재 Stub)
+  → CANDIDATE 생성
+  → CEO Release Candidate 승인
+  → 별도 Signing Worker(현재 Stub)
 ```
 
-주요 상태는 다음 순서로 진행된다.
+“개발 시작”은 위 자동화 전체를 시작한다. 테스트·보안검사·빌드를 사용자가 각각
+시작할 필요가 없다. 중간 단계가 실패해도 성공으로 바꾸지 않으며, 실행된 단계의
+보고서를 저장한 뒤 Release Gate를 차단한다.
 
-| 단계            | 프로젝트 상태                                     |
-| --------------- | ------------------------------------------------- |
-| 아이디어 등록   | `IDEA`                                            |
-| PRD 작성·수정   | `PRD_DRAFT`, `PRD_REVIEW`, `REVISION_REQUIRED`    |
-| PRD 확정        | `PRD_APPROVED`, `PRD_LOCKED`                      |
-| Repository 준비 | `REPO_BOOTSTRAPPING`, `REPO_READY`                |
-| Codex 개발      | `DEVELOPMENT_QUEUED`, `DEVELOPING`, `CODE_REVIEW` |
-| 품질 검증       | `QA_TESTING`, `SECURITY_REVIEW`                   |
-| 출시 승인       | `RELEASE_CANDIDATE`, `FINAL_APPROVAL`             |
-| 서명·빌드·출시  | `SIGNED`, `BUILT`, `RELEASED`                     |
+## 3. 사전 준비
 
-상태는 서버가 허용된 방향으로만 전환한다. 임의 상태 변경은 할 수 없다.
+### Factory
 
-## 3. 운영 준비 확인
+- Web/API/PostgreSQL/Redis/MinIO가 실행 중이어야 한다.
+- CEO 계정으로 로그인할 수 있어야 한다.
+- GitHub App 또는 Fine-grained PAT가 설정되어야 한다.
+- 실제 작업에는 Windows 또는 Linux 호스트의 Real Codex Worker가 실행 중이어야 한다.
 
-### 3.1 웹과 계정
+### Windows Real Worker
 
-1. `https://factory.sandeul.work`에 접속한다.
-2. 관리자 ID 또는 이메일과 비밀번호로 로그인한다.
-3. 대시보드가 열리고 `앱 제작 현황`이 표시되는지 확인한다.
+현재 저장소에서 다음 명령으로 환경만 검사한다.
 
-### 3.2 GitHub
-
-다음 중 하나가 설정돼 있어야 한다.
-
-- 권장: GitHub App
-- 호환 모드: 조직 범위가 제한된 Fine-grained PAT
-
-Fine-grained PAT를 사용할 때는 `GITHUB_ADAPTER=fine-grained-pat`이어야 한다.
-Repository 생성, Contents 쓰기, Pull Request 쓰기, Checks 읽기 권한을 확인한다.
-
-### 3.3 Real Codex Worker
-
-실제 Codex를 사용하기 전 운영자가 다음을 확인한다.
-
-```bash
-sudo -u factory-codex codex --version
-sudo systemctl status sandeul-factory-codex-worker
-journalctl -u sandeul-factory-codex-worker -n 100 --no-pager
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\infra\scripts\start-real-worker.ps1 -CheckOnly
 ```
 
-Worker의 필수 기준:
+실제 Worker를 foreground로 실행한다.
 
-- `CODEX_ADAPTER=real`
-- `CODEX_SANDBOX=workspace-write`
-- `CODEX_CONCURRENCY=1`
-- Factory PostgreSQL과 Redis에 연결 가능
-- GitHub App 또는 Fine-grained PAT 설정 완료
-- 전용 OS 사용자로 Codex 인증 완료
-- Android SDK, JDK, Gradle 빌드 도구 설치
-- 실행 가능한 테스트 명령이 `CODEX_ALLOWED_TEST_COMMANDS`에 등록됨
-- Android signing key는 Worker에 없음
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\infra\scripts\start-real-worker.ps1
+```
 
-자세한 설치 절차는 [Codex Worker 운영](codex-worker.md)을 참고한다.
+개발 중 파일 변경을 감시하려면 `-Watch`를 추가한다. 스크립트는 `.env`를 읽되 Secret을
+출력하지 않고 다음을 검증한다.
 
-## 4. 프로젝트 생성
+- Codex CLI와 `CODEX_HOME/auth.json`
+- `codex login status`
+- Android Studio JBR
+- Android SDK와 adb
+- 전용 workspace root
+- PostgreSQL·Redis·MinIO의 호스트 연결 주소
+- 필수 보안 도구 존재 여부
 
-1. 왼쪽 메뉴에서 `대시보드` 또는 `프로젝트`를 연다.
-2. `새 프로젝트`를 누른다.
-3. 다음 값을 입력한다.
+Docker의 Fake Worker는 기본 Compose에서 실행되지 않는다. Fake E2E가 필요할 때만
+다음 profile을 사용한다.
 
-| 필드          | 입력 기준                                      |
-| ------------- | ---------------------------------------------- |
-| 프로젝트 이름 | 사람이 읽는 앱 이름                            |
-| 식별자        | 영문 소문자, 숫자, 하이픈으로 구성한 고유 slug |
-| 프로젝트 요약 | 목표 사용자, 핵심 문제, 제품 범위를 짧게 기록  |
+```powershell
+docker compose --profile fake-worker up -d --build
+```
 
-4. `프로젝트 생성`을 누른다.
-5. 생성된 프로젝트를 열고 초기 상태가 `IDEA`인지 확인한다.
+## 4. ChatGPT MCP로 PRD 만들기
 
-## 5. PRD 준비와 업로드
+### MCP가 자동으로 아는 내용
 
-### 5.1 ChatGPT에서 PRD 작성
+MCP `tools/list`에는 `factory.get_prd_schema`가 노출된다. Tool 설명은 PRD 작성 전에 이
+도구를 먼저 호출하도록 지시한다. 반환값에는 다음이 포함된다.
 
-PRD에는 최소한 다음 내용이 있어야 한다.
+- Schema version `android-build-ready/v1`
+- 전체 JSON Schema
+- Build-ready Markdown Template
+- 고정 담당자 `산들`, `수빈`
+- 업로드와 검토 요청 순서
 
-- 제품 목표와 해결할 문제
-- 타깃 사용자
-- 포함 기능과 제외 기능
-- 핵심 사용자 흐름
-- 데이터와 개인정보 처리
-- Android 권한과 보안 제약
-- 수익모델
-- 운영·장애 위험
+따라서 ChatGPT에게 필드 목록, Android SDK 기준, 담당자를 매번 설명할 필요가 없다.
+다만 외부 시스템에 쓰는 작업이므로 첫 요청에는 “Factory에 업로드해 줘”라는 의도를
+명확히 포함한다.
+
+권장 요청:
+
+```text
+이 아이디어를 시장성·경쟁사·수익성·기술·보안·개인정보 관점에서 검토해줘.
+Factory MCP의 최신 PRD Schema를 먼저 확인하고, 담당자는 산들·수빈으로 유지해.
+배포 가능한 Android 앱 수준의 구체적인 PRD를 작성해서 Factory 프로젝트를 만들고
+PRD DRAFT로 업로드한 다음 검토 요청까지 해줘. 승인이나 개발 시작은 하지 마.
+```
+
+ChatGPT는 다음 순서로 Tool을 사용해야 한다.
+
+1. `factory.get_prd_schema`
+2. `factory.list_projects` 또는 `factory.create_project`
+3. `factory.upload_prd` 또는 `factory.create_prd_version`
+4. 사용자 요청에 포함된 경우 `factory.request_prd_review`
+5. 생성된 Project ID, PRD version, SHA-256을 보고
+
+MCP는 승인, 잠금, 개발 시작, PR 병합, 서명 Tool을 제공하지 않는다. 이 작업은 CEO
+Control Center에서 수행한다.
+
+### MCP 설정 점검
+
+`.env`의 최소 설정:
+
+```dotenv
+MCP_ENABLED=true
+MCP_TOKEN_PEPPER=<운영자가 생성해 보관한 강한 Secret>
+MCP_CREDENTIAL_SCOPES=factory.get_prd_schema,factory.list_projects,factory.get_project,factory.get_project_status,factory.create_project,factory.upload_prd,factory.create_prd_version,factory.request_prd_review
+```
+
+`MCP_TOKEN_PEPPER`가 비어 있으면 인증된 MCP 요청도 거부된다. 기존 Credential의 scope는
+자동 변경되지 않으므로 새 Tool scope가 없는 Credential은 CEO 설정 화면에서 폐기하고
+새 Credential을 발급한다. 새 token은 한 번만 표시된다.
+
+## 5. Build-ready PRD 기준
+
+Canonical 형식은 JSON을 권장하며 Markdown도 지원한다.
+
+- JSON Schema: `schemas/prd/android-build-ready-v1.schema.json`
+- Markdown Template: `docs/templates/android-build-ready-prd.md`
+
+JSON은 다음 범주를 모두 구조화한다.
+
+- 문서 metadata와 고정 담당자
+- 제품 문제, 타깃 사용자, 측정 가능한 목표와 수익모델
+- MUST/SHOULD/제외/향후 범위
+- 사용자 여정, 화면별 route·상태·오류·접근성
+- 기능 요구사항과 Feature/Screen 참조
+- 데이터 모델, 보존·삭제·Migration·Offline 정책
+- API request/response/error/timeout/retry
+- applicationId, SDK, Kotlin, Compose, Architecture, Module
+- Permission 요청 시점과 거부 동작
+- Secret, TLS, WebView, exported component, backup, debuggable
+- 개인정보 동의·보존·삭제
+- 디자인 시스템과 누락 Asset 정책
+- 로그·Crash·Analytics의 민감정보 제외
+- 고정 Gradle 테스트·Lint·빌드 명령
+- 테스트 계획과 기기 매트릭스
+- Given/When/Then/Verification 형식의 Acceptance Criteria
+- Release Gate, 가정, 미결정 사항, 위험과 완화책
+
+서버는 고정 담당자 변경, SDK 기준 미달, dangling ID 참조, 중복 ID, 보안 우회 설정을
+거부한다. PDF/DOCX는 원본 Artifact일 뿐 Canonical PRD로 자동 확정하지 않는다.
+
+## 6. CEO 검토와 승인
+
+1. 프로젝트의 `PRD`에서 본문과 SHA-256을 확인한다.
+2. 섹션 또는 inline 코멘트를 작성한다.
+3. `CEO 제약사항`에 변경 불가능한 제약을 기록한다.
+4. `의사결정 기록`에 기능 추가·제외, 우선순위, 수익모델, 기술·보안 판단을 기록한다.
+5. `검토 요청`을 누른다.
+6. 승인 Modal에서 조건부 승인, 수정 요청, 반려, 보류 또는 최종 승인을 선택한다.
+
+조건부 승인이나 수정 요청 후에는 기존 PRD를 고치지 않고 새 버전을 업로드한다. 최종
+승인 시 서버가 승인 기록을 저장하고 곧바로 PRD를 잠근다. 별도의 잠금 버튼을 다시
+누르더라도 동일한 잠긴 버전을 반환한다.
+
+잠금 결과에서 다음을 확인한다.
+
+- 상태 `LOCKED`
+- PRD version과 SHA-256
+- 승인·잠금 사용자와 시간
+- CEO Constraint와 Decision Record snapshot
+- 포함 Artifact와 제외 범위
 - Acceptance Criteria
-- 출시 범위
 
-Canonical PRD는 Markdown 또는 구조화 JSON으로 저장한다.
+## 7. Repository 준비와 자동 Task 전달
 
-```markdown
-# 앱 이름
+잠긴 PRD에서 GitHub Repository를 생성하거나 기존 Repository를 연결한다.
 
-## 목표
+새 Repository 생성 시 Factory는 `AGENTS.md`, README, PR template과
+`docs/factory` 기준 파일을 초기화한다. 기존 Repository 연결 시 기본 브랜치와 원격
+식별자를 GitHub에서 재검증한다.
 
-## 타깃 사용자
-
-## 핵심 기능
-
-## 제외 범위
-
-## 보안 및 개인정보
-
-## Acceptance Criteria
-```
-
-PDF와 DOCX는 참고 원본으로 보관할 수 있지만 자동으로 Canonical PRD가 되지는 않는다.
-
-### 5.2 PRD 업로드
-
-1. 프로젝트 내부에서 `PRD`를 연다.
-2. `PRD 업로드` 또는 `새 PRD 버전 업로드`를 누른다.
-3. `.md` 또는 `.json` 파일을 선택한다.
-4. `Acceptance Criteria`에 검증 가능한 기준을 한 줄에 하나씩 입력한다.
-5. `제외 범위`에 이번 출시에서 하지 않을 항목을 한 줄에 하나씩 입력한다.
-6. `새 버전 업로드`를 누른다.
-7. 다음 항목을 확인한다.
-
-- PRD 버전 번호
-- 상태 `DRAFT`
-- 전체 SHA-256
-- Canonical 본문
-- Acceptance Criteria
-
-잠긴 PRD는 직접 수정할 수 없다. 수정이 필요하면 항상 새 버전을 올린다.
-
-## 6. PRD 검토와 CEO 의사결정
-
-### 6.1 코멘트
-
-1. `PRD`에서 검토할 버전을 선택한다.
-2. `섹션 코멘트`에서 PRD 전체 또는 특정 섹션을 선택한다.
-3. 검토 의견을 작성하고 `코멘트 작성`을 누른다.
-
-코멘트에는 모호한 요구사항, 보안 문제, 제외 범위, 측정 불가능한 Acceptance
-Criteria를 구체적으로 기록한다.
-
-### 6.2 CEO 제약사항
-
-1. `CEO 제약사항`을 연다.
-2. `새 기록`을 누른다.
-3. 제목, 상세 내용, 적용 범위, 우선순위, 필수 여부, 사유를 입력한다.
-
-예:
-
-- Codex Worker의 signing key 접근 금지
-- 광고 SDK 사용 금지
-- 개인정보 서버 저장 금지
-- 출시일까지 포함할 기능 제한
-
-기존 기록을 덮어쓰지 않고 새 버전으로 보존한다.
-
-### 6.3 Decision Record
-
-1. `의사결정 기록`을 연다.
-2. `새 기록`을 누른다.
-3. 액션을 선택하고 상세 근거를 기록한다.
-
-지원 액션:
-
-- 기능 추가 또는 제외
-- 우선순위 변경
-- 타깃 사용자 변경
-- 수익모델 변경
-- 기술·보안 제약 추가
-- 출시 범위 변경
-
-### 6.4 검토·수정·최종 승인
-
-1. PRD에서 `검토 요청`을 누른다.
-2. 상태가 `IN_REVIEW`가 되면 `승인 결정`을 누른다.
-3. 다음 중 하나를 선택한다.
-
-| 액션        | 사용 시점                           |
-| ----------- | ----------------------------------- |
-| 최종 승인   | 수정 없이 개발 기준으로 확정 가능   |
-| 조건부 승인 | 명시한 조건을 반영한 새 버전이 필요 |
-| 수정 요청   | 요구사항 수정 후 재검토 필요        |
-| 반려        | 프로젝트 또는 PRD를 채택하지 않음   |
-| 보류        | 결정을 나중으로 미룸                |
-
-4. 조건부 승인 또는 수정 요청이면 PRD를 직접 고치지 말고 새 버전을 업로드한다.
-5. 이전 버전과 새 버전의 본문·Hash·Acceptance Criteria를 비교한다.
-6. 수정 버전을 다시 `검토 요청`하고 `최종 승인`한다.
-7. 상태가 `APPROVED`가 되면 `최종 잠금`을 누른다.
-8. `LOCKED`와 잠긴 SHA-256을 확인한다.
-
-잠금 전 체크:
-
-- 모든 필수 CEO Constraint 반영
-- Decision Record와 PRD가 충돌하지 않음
-- 포함·제외 범위 명확
-- Acceptance Criteria가 테스트 가능
-- 개인정보와 Android 권한 명시
-
-## 7. GitHub Repository 준비
-
-PRD가 잠기면 `개발 작업` 메뉴에 Repository 설정 화면이 표시된다.
-
-### 7.1 새 Repository 생성
-
-1. `Owner`에 GitHub 조직 이름을 입력한다.
-2. Repository 이름과 설명을 입력한다.
-3. 필요하면 Template owner와 Template repository를 입력한다.
-4. 기본적으로 `Private Repository`를 유지한다.
-5. `Repository 생성 요청`을 누른다.
-
-Factory는 Repository를 만들고 `AGENTS.md`, `README.md`, PR template과
-`docs/factory` 기준 파일을 초기화한다.
-
-### 7.2 기존 Repository 연결
-
-1. `Owner 조회`에 GitHub 조직 이름을 입력한다.
-2. PAT 또는 GitHub App이 볼 수 있는 Repository 목록을 기다린다.
-3. 대상 Repository의 `연결`을 누른다.
-4. 연결된 Owner/Repository, 기본 Branch, 인증 모드와 CI Check를 확인한다.
-
-기존 앱 Repository의 기본 브랜치나 Secret을 Factory가 임의로 변경하지 않는다.
-
-## 8. Codex 개발 작업 생성
-
-Repository가 `REPO_READY`가 되면 `개발 작업`에서 `새 Codex 작업`을 작성할 수 있다.
-
-### 8.1 Task 유형
-
-| 유형                     | 용도                              |
-| ------------------------ | --------------------------------- |
-| `PRD 구현`               | 잠긴 PRD의 최초 구현              |
-| `기능 추가`              | 승인된 기능 범위 추가             |
-| `리뷰 수정`              | 코드 리뷰 의견 반영               |
-| `테스트 수정`            | 실패한 테스트 원인 수정           |
-| `보안 수정`              | Security Finding 수정             |
-| `승인 범위 Refactor`     | 승인된 범위 안의 구조 개선        |
-| `Release Candidate 빌드` | 검증된 Commit의 Android 후보 빌드 |
-| `문서 생성`              | 승인 범위의 문서 작성             |
-
-### 8.2 Task 입력
-
-1. Task 유형을 선택한다.
-2. 작업 제목을 입력한다.
-3. `개발 지시`에 구현 범위와 결과물을 작성한다.
-4. Acceptance Criteria를 한 줄에 하나씩 입력한다.
-5. 대상 Branch를 확인한다.
-6. 필요하면 허용 경로와 금지 경로를 한 줄에 하나씩 입력한다.
-7. `Codex 작업 생성`을 누른다.
-
-권장 예:
+Repository 상태가 `REPO_READY`가 되면 서버가 다음 작업을 idempotent하게 자동 생성한다.
 
 ```text
-작업 제목:
-잠긴 PRD의 로그인 및 온보딩 구현
-
-개발 지시:
-잠긴 PRD의 로그인과 최초 온보딩 범위만 구현한다.
-관련 없는 화면과 Gradle 구성을 변경하지 않는다.
-완료 전 승인된 테스트 명령을 실행하고 미완료 항목을 보고한다.
-
-Acceptance Criteria:
-올바른 계정으로 로그인할 수 있다.
-잘못된 비밀번호는 오류 메시지를 표시한다.
-로그아웃 후 인증 화면으로 이동한다.
-
-허용 경로:
-app/**
-docs/**
-
-금지 경로:
-infra/**
-.github/workflows/release.yml
+Type: IMPLEMENT_PRD
+Status: DRAFT
+Locked PRD: 현재 잠긴 version과 SHA-256
+Acceptance Criteria: 잠긴 PRD 기준
+Target branch: Repository 기본 branch
 ```
 
-`.env`, keystore, `google-services.json` 등 민감 경로는 서버가 자동으로 금지 목록에
-추가한다.
+이 시점에는 CodexRun이나 Queue Job이 생성되지 않는다. PRD가 개발 조직에 전달됐지만
+CEO가 실행을 승인하지 않은 상태다.
 
-## 9. Codex 실행 확인
+## 8. 개발 시작
 
-Task를 선택하면 `실행 로그`에 SSE 이벤트가 실시간 표시된다.
+1. 프로젝트의 `개발 작업`을 연다.
+2. 자동 생성된 `DRAFT` 작업을 선택한다.
+3. 잠긴 PRD Hash, Task 지시, 대상 Repository를 확인한다.
+4. `개발 시작`을 누른다.
 
-정상 흐름:
+서버는 동시에 두 번 시작하는 요청을 원자적으로 차단한다. 성공하면 다음이 생성된다.
+
+- `CodexRun`
+- BullMQ `Job`
+- 첫 `run.queued` 이벤트
+- `CODEX_TASK_START` 감사 로그
+- 프로젝트 상태 `DEVELOPMENT_QUEUED`
+
+Worker 기본 동시 실행 수는 1이다.
+
+## 9. Codex와 자동 품질 파이프라인
+
+### Codex 개발
+
+Worker는 새 clone/workspace에서 대상 Commit, 잠긴 PRD Hash, 최신
+TaskInstructionVersion, `AGENTS.md`, allowed/denied path를 검증한다. Codex는
+`workspace-write` sandbox와 JSON 결과 Schema로 실행한다.
+
+Codex 완료 JSON은 변경 파일, 자체 실행 테스트, 가정·질문·미완료 항목뿐 아니라 각
+Acceptance Criteria의 정확한 문자열, 상태, 검증 증거를 포함해야 한다. 기준이
+누락되거나 `NOT_VERIFIED`이면 최종 Test Run은 실패다.
+
+### 독립 테스트
+
+Codex 완료 후 Worker가 Codex의 자체 보고와 별개로 다음 고정 Gradle Task를 실행한다.
 
 ```text
-QUEUED → STARTING/RUNNING → SUCCEEDED
+./gradlew test
+./gradlew lint
+./gradlew detekt
+./gradlew ktlintCheck
 ```
 
-확인 항목:
+Windows에서는 `.bat`를 Shell로 실행하지 않는다. `JAVA_HOME/bin/java`와
+`gradle-wrapper.jar`를 직접 실행해 command injection 경계를 유지한다.
 
-- Locked PRD SHA-256이 선택한 버전과 같은가
-- Adapter가 `real`인가
-- Worker가 Repository를 clone하고 대상 Branch/Commit을 검증했는가
-- 변경 경로가 허용 범위 안인가
-- 승인된 테스트 명령을 실행했는가
-- 가정, 질문, 미완료 항목이 완료 보고에 기록됐는가
+### 보안검사와 SBOM
 
-대기 또는 실행 중인 작업은 `작업 중단`으로 취소 요청할 수 있다. 취소는 즉시 성공으로
-처리되지 않으며 Worker가 프로세스를 종료한 뒤 `CANCELLED`로 기록한다.
+다음을 자동 실행한다.
 
-완료 후 수정이 필요하면 `후속 지시 / 재작업 요청`을 사용한다. 기존 지시는 수정되지
-않고 새 `TaskInstructionVersion`과 새 Codex Run이 생성된다.
+- Factory Android Manifest/Source baseline
+- Gitleaks
+- Semgrep
+- Trivy filesystem
+- OSV-Scanner
+- Syft SPDX JSON SBOM
+- MobSF 설정 상태 기록
 
-## 10. 코드 변경과 Pull Request 검토
+도구가 없거나 실행 오류가 나면 HIGH Finding과 실패 Step을 기록한다. CRITICAL/HIGH가
+하나라도 열려 있거나 SBOM이 없으면 Release Gate가 차단된다. MobSF Endpoint가 없으면
+현재는 INFO로 기록한다.
 
-1. 프로젝트의 `코드 변경`을 연다.
-2. 완료된 Task를 선택한다.
-3. Git diff, Commit SHA와 PR 링크를 확인한다.
-4. 관련 없는 파일, Secret, 테스트 무력화, PRD 범위 확장이 없는지 검토한다.
-5. `Pull Request 열기`로 GitHub에서 CI Check와 전체 변경을 검토한다.
+### 빌드와 설치 Smoke Test
 
-Factory는 자동 병합하지 않는다. 수정이 필요하면 Factory에서 `리뷰 수정` Task 또는
-후속 지시를 만든다. 승인된 경우에만 GitHub에서 사람이 병합한다.
-
-## 11. 테스트
-
-### 11.1 Codex가 보고한 테스트
-
-Real Codex는 허용된 테스트 명령을 실행하고 완료 JSON에 결과를 기록한다. Worker는
-이를 `테스트` 화면에 표시하지만 다음 문구가 붙는다.
+Worker가 다음을 실행하고 산출물을 MinIO/S3에 업로드한다.
 
 ```text
-Codex 자체 보고 결과이며 Acceptance Criteria 검증을 대체하지 않습니다.
+./gradlew assembleDebug
+./gradlew bundleRelease
 ```
 
-이 기록의 `acceptanceCriteriaMet`는 `false`이므로 단독으로 Release Gate를 통과할 수
-없다.
+- AAB가 있으면 unsigned release AAB를 우선 Build Artifact로 등록한다.
+- AAB가 없으면 debug APK를 등록한다.
+- SHA-256을 업로드 전후 재검증한다.
+- signing key에는 접근하지 않는다.
+- `ANDROID_SMOKE_TEST_SERIAL`이 지정된 전용 Emulator에 debug APK를 설치한다.
+- Emulator serial이 없거나 설치 실패 시 Test Run이 실패하고 Gate가 차단된다.
 
-### 11.2 승인된 최종 Test Run
+### Release Gate
 
-승인된 CI/Test Adapter가 Codex가 만든 정확한 Commit SHA에 대해 테스트를 다시 실행한
-뒤 구조화된 결과를 제출한다.
+모든 결과는 같은 Commit SHA와 잠긴 PRD Hash로 묶인다. Gate는 다음을 확인한다.
 
-필수 확인:
-
-- Commit SHA가 PR, Build, Security Scan과 같음
-- 상태 `PASSED`
-- 실패 테스트 0
-- Acceptance Criteria 충족 `true`
-- 실제 실행 명령과 개별 테스트 결과 포함
-- 필요하면 Test Report Artifact 연결
-
-현재 웹의 `테스트` 화면은 결과 검토용이다. Test Run 등록은 CI/Test Adapter가
-`POST /api/projects/{projectId}/test-runs`로 수행한다. 요청 schema는
-`https://factory.sandeul.work/api/docs`에서 확인한다.
-
-테스트가 실패하면:
-
-1. 실패 원인과 Commit SHA를 확인한다.
-2. `테스트 수정` Task를 생성한다.
-3. 새 PR과 새 Commit을 검토한다.
-4. 새 Commit으로 Test Run, Security Scan, Build를 모두 다시 만든다.
-
-## 12. 보안검사와 SBOM
-
-승인된 Scanner Adapter는 Codex/CI Commit에 대해 보안검사를 실행한다.
-
-Android 권장 검사:
-
-- Android Lint, detekt, ktlint
-- dependency scan
-- gitleaks, Semgrep, Trivy
-- Android Manifest와 exported component 검사
-- Network Security Config, WebView, debuggable, backup 검사
-- MobSF Adapter
-- SBOM 생성
-
-Scanner는 다음을 Factory에 제출한다.
-
-- Commit SHA
-- Scanner 종류와 성공/실패
-- Finding의 severity, rule ID, 설명, 파일/라인, 수정 방법
-- SBOM Artifact ID
-- 필요하면 Security Report Artifact ID
-
-현재 웹의 `보안` 화면은 결과 검토와 위험 수용을 제공한다. Scan 등록과 SBOM 업로드는
-Scanner Adapter가 다음 API로 수행한다.
-
-```text
-POST /api/projects/{projectId}/artifacts/SBOM/07%20Security%20Reports
-POST /api/projects/{projectId}/security-scans
-```
-
-Release 기준:
-
-- CRITICAL 1개 이상이면 차단
-- 미해결 HIGH 1개 이상이면 차단
-- CRITICAL은 위험 수용 불가
-- HIGH 위험 수용은 구체적인 사유와 필요 시 만료일 필수
-- SBOM이 없으면 차단
-
-위험 수용보다 수정을 우선한다. 수정 시 `보안 수정` Task를 만들고 새 Commit 기준으로
-검사를 다시 실행한다.
-
-## 13. Android 빌드
-
-### 13.1 Codex Build Task
-
-검증된 범위에서 `Release Candidate 빌드` Task를 만들 수 있다. 지시에는 빌드 유형,
-대상 Commit, 실행할 Gradle 명령과 산출물 종류를 명시한다.
-
-예:
-
-```text
-승인된 Commit으로 unsigned release AAB를 생성한다.
-./gradlew bundleRelease와 관련 검증을 실행한다.
-signing key에 접근하지 않는다.
-산출물 경로와 SHA-256, 실행 결과를 완료 보고에 기록한다.
-```
-
-Codex Worker 자체는 APK/AAB를 Factory Object Storage에 자동 등록하지 않는다. 승인된
-CI/Build Adapter가 산출물을 업로드하고 Build record를 등록해야 한다.
-
-### 13.2 Artifact와 Build 등록
-
-Build Adapter는 다음 순서로 수행한다.
-
-1. APK 또는 AAB의 SHA-256을 계산한다.
-2. Artifact를 `08 Builds`에 업로드한다.
-3. 같은 Commit SHA로 Build report를 등록한다.
-
-```text
-POST /api/projects/{projectId}/artifacts/APK/08%20Builds
-POST /api/projects/{projectId}/artifacts/AAB/08%20Builds
-POST /api/projects/{projectId}/builds
-```
-
-지원 Build 유형:
-
-- `DEBUG`
-- `UNSIGNED_RELEASE`
-- `SIGNED_RELEASE`
-
-Codex Worker에는 signing key가 없으므로 Codex 단계에서는 `DEBUG` 또는
-`UNSIGNED_RELEASE`를 사용한다.
-
-현재 웹의 `파일` 화면은 등록된 Artifact 조회·다운로드용이며 일반 Artifact 업로드
-폼은 없다. 업로드는 승인된 Adapter/API가 수행한다. 파일 크기 제한은 기본 50 MiB다.
-
-## 14. Release Gate와 최종 승인
-
-1. 프로젝트의 `빌드`를 연다.
-2. `Release Candidate 생성`에서 다음 세 기록을 선택한다.
-
-- Build
-- Test Run
-- Security Scan
-
-3. 세 기록의 Commit SHA가 모두 같은지 확인한다.
-4. `Release Gate 실행 및 Candidate 생성`을 누른다.
-
-Gate가 다시 확인하는 항목:
-
-- 잠긴 PRD와 Build의 PRD SHA-256 일치
-- Test Run, Security Scan, Build의 Commit SHA 일치
-- 테스트 성공과 Acceptance Criteria 충족
+- 독립 Test Run 성공
+- 모든 Acceptance Criteria 증거 통과
 - Security Scan 성공
-- 미해결 CRITICAL 없음
-- 위험 수용되지 않은 HIGH 없음
-- SBOM 존재
+- CRITICAL 0, 미수용 HIGH 0
+- SPDX SBOM 존재
 - Build 성공
-- APK/AAB Artifact와 저장된 SHA-256 일치
+- Artifact 존재와 SHA-256 일치
+- Test/Security/Build Commit SHA 일치
 
-차단되면 blocker 목록을 확인하고 새 Codex Task와 새 검증 기록으로 해결한다. 실패한
-기록을 성공으로 수정하지 말고 새 기록을 만든다.
+통과하면 Release가 `CANDIDATE`, 프로젝트가 `RELEASE_CANDIDATE`가 된다. 실패하면
+Release가 `GATE_BLOCKED`이며 프로젝트는 마지막 정상 검토 단계에 머문다.
 
-Gate를 통과하면 Release 상태가 `CANDIDATE`가 된다.
+## 10. 실행 중 확인과 취소
 
-1. 최종 승인 사유를 입력한다.
-2. `Release Candidate 승인`을 누른다.
-3. 상태가 `APPROVED`, 프로젝트가 `FINAL_APPROVAL`인지 확인한다.
-4. APK/AAB의 `다운로드`로 승인된 Artifact를 확인한다.
+Task 상세의 `실행 로그`는 SSE로 다음 이벤트를 표시한다.
 
-## 15. 서명과 최종 Release
+- workspace와 Codex 시작
+- Codex JSONL event
+- 독립 test step
+- security step
+- build step
+- PR 생성
+- Release Gate 통과 또는 차단
 
-승인된 Release에서 `Signing Worker 요청`을 누를 수 있지만 현재 Stub은
-`NOT_CONFIGURED`를 반환한다. 실제 서명이 구성되기 전에는 다음 상태가 정상이다.
+`QUEUED` 또는 `RUNNING` 작업은 `작업 중단`으로 취소할 수 있다. Worker가 실제 프로세스
+종료를 확인한 뒤 `CANCELLED`로 기록한다.
 
-- Build가 `미서명`
-- unsigned 또는 debug Artifact만 다운로드 가능
-- Release가 자동으로 `SIGNED` 또는 `RELEASED`가 되지 않음
+## 11. 코드와 결과 검토
 
-향후 Signing Worker는 승인된 Commit SHA, PRD Hash, Test Run, Security Scan, Release
-Candidate와 Build Hash를 모두 재검증해야 한다.
+### 코드 변경
 
-## 16. 자주 사용하는 재작업 흐름
+- Git diff와 변경 이유
+- Commit SHA
+- 작업 Branch
+- Pull Request URL
+- 관련 없는 Refactor 또는 금지 경로 변경
+- Secret, signing key, `.env` 포함 여부
 
-| 상황                  | 권장 조치                                          |
-| --------------------- | -------------------------------------------------- |
-| PRD 요구사항이 바뀜   | 잠긴 PRD를 수정하지 말고 새 PRD 버전부터 다시 승인 |
-| 코드 리뷰 수정        | `리뷰 수정` Task 또는 후속 지시                    |
-| 테스트 실패           | `테스트 수정` Task 후 새 Commit으로 전체 검증      |
-| HIGH/CRITICAL Finding | `보안 수정` Task, HIGH만 예외적으로 위험 수용      |
-| 빌드 실패             | 원인 수정 후 새 `Release Candidate 빌드` Task      |
-| Codex가 범위를 벗어남 | 작업 중단, allowed/denied paths를 강화해 새 지시   |
-| Worker 응답 없음      | Queue, Redis, systemd 상태와 Worker journal 확인   |
-| 동일 작업 중복 생성   | 기존 Task 상태를 확인하고 후속 지시 사용           |
+자동 병합은 없다. 수정이 필요하면 후속 지시 또는 `FIX_REVIEW`, `FIX_TEST`,
+`FIX_SECURITY` 작업을 사용한다. 기존 지시는 덮어쓰지 않고 새 버전으로 남는다.
 
-## 17. 현재 MVP에서 UI만으로 완료되지 않는 항목
+### 테스트
 
-다음 항목은 현재 웹에서 결과를 검토할 수 있지만 생성·제출은 승인된 외부 Adapter 또는
-REST API가 담당한다.
+- Test Run 상태와 Commit SHA
+- 각 Gradle Step의 명령, 실행시간, 오류
+- Acceptance Criteria 상태와 증거
+- APK 설치 Smoke Test
+- Test Report Artifact
 
-- 일반 Artifact 업로드
-- Acceptance Criteria를 충족한 최종 Test Run 등록
-- Security Scan과 SBOM 등록
-- APK/AAB Build record 등록
-- 실제 release signing
+### 보안
 
-따라서 실제 운영 자동화의 완료 기준은 다음과 같다.
+- Scanner별 성공/실패
+- Finding severity, rule, 설명, 수정 방법
+- SBOM과 Security Report Artifact
+- MobSF 설정 상태
 
-```text
-Real Codex Worker
-  + GitHub CI/Test Adapter
-  + Security Scanner/SBOM Adapter
-  + Android Build/Artifact Adapter
-  + 향후 Signing Worker
-```
+CRITICAL은 위험 수용할 수 없다. HIGH는 구체적인 사유가 있는 CEO/보안검토자의 위험
+수용만 허용하지만 수정을 우선한다.
 
-API 요청에는 로그인 Session, `x-csrf-token`, 역할 권한과 request ID가 적용된다.
-범용 Shell이나 범용 SQL을 Factory 웹/API에 연결하지 않는다.
+### 빌드와 파일
 
-## 18. 최종 체크리스트
+- Build type과 미서명 표시
+- APK/AAB SHA-256
+- `08 Builds`의 Artifact
+- Test/Security report와 SBOM
 
-- [ ] 실제 ChatGPT PRD를 `.md` 또는 `.json`으로 업로드
-- [ ] Acceptance Criteria와 제외 범위 입력
-- [ ] CEO Constraint와 Decision Record 검토
-- [ ] 최종 승인 후 PRD `LOCKED`
-- [ ] GitHub Repository `REPO_READY`
-- [ ] Codex Run Adapter가 `real`
-- [ ] Git diff, Commit SHA, Pull Request 검토
-- [ ] 승인된 Test Run `PASSED`, Acceptance Criteria 충족
-- [ ] Security Scan `PASSED`, SBOM 연결
+## 12. Release Candidate 승인
+
+1. `빌드`에서 자동 생성된 Release를 선택한다.
+2. 상태가 `CANDIDATE`인지 확인한다.
+3. Gate report의 모든 check가 true인지 확인한다.
+4. APK/AAB를 내려받아 SHA-256과 미서명 상태를 확인한다.
+5. 최종 승인 사유를 입력한다.
+6. `Release Candidate 승인`을 누른다.
+
+승인 후 Release는 `APPROVED`, 프로젝트는 `FINAL_APPROVAL`이다. 실제 서명은 별도
+Signing Worker가 승인 Commit, PRD Hash, Test Run, Security Scan, Build Hash를 다시
+검증한 뒤 수행해야 한다. 현재 Stub은 `NOT_CONFIGURED`를 반환한다.
+
+## 13. 실패와 재작업
+
+| 실패                                | 처리                                                          |
+| ----------------------------------- | ------------------------------------------------------------- |
+| PRD Schema 검증 실패                | ChatGPT가 `factory.get_prd_schema`를 다시 읽고 새 버전 업로드 |
+| Codex `BLOCKED`/`FAILED`            | 질문·가정을 검토하고 후속 지시                                |
+| Gradle test/lint/detekt/ktlint 실패 | `FIX_TEST` 작업                                               |
+| CRITICAL/HIGH Finding               | `FIX_SECURITY` 작업                                           |
+| Scanner 또는 Syft 미설치            | Worker 도구 설치 후 재작업                                    |
+| APK/AAB 빌드 실패                   | Gradle 로그를 기준으로 수정                                   |
+| Emulator 미설정 또는 APK 설치 실패  | 전용 Emulator와 `ANDROID_SMOKE_TEST_SERIAL` 설정              |
+| Acceptance Criteria 증거 누락       | 구현·테스트 보완 후 새 Codex Run                              |
+| GitHub push/PR 실패                 | GitHub 권한·네트워크 확인 후 재시도                           |
+| Object Storage 실패                 | MinIO/S3 상태를 복구하고 같은 Job 재시도                      |
+| Gate 차단                           | 실패 기록을 수정하지 말고 새 Commit과 새 품질 기록 생성       |
+
+## 14. 운영 체크리스트
+
+- [ ] MCP Token pepper와 Credential scope 설정
+- [ ] ChatGPT가 최신 PRD Schema를 조회한 기록 확인
+- [ ] 담당자 `산들`, `수빈`
+- [ ] PRD 최종 승인과 자동 `LOCKED`
+- [ ] Repository `REPO_READY`
+- [ ] 자동 `IMPLEMENT_PRD` Task `DRAFT`
+- [ ] CEO가 `개발 시작`
+- [ ] Codex Adapter `real`
+- [ ] Commit·Branch·PR 확인
+- [ ] 독립 Test Run `PASSED`
+- [ ] Acceptance Criteria 전부 증거 있음
+- [ ] Security Scan `PASSED`
 - [ ] CRITICAL 0, 미수용 HIGH 0
-- [ ] Build `SUCCEEDED`, APK/AAB Hash 확인
-- [ ] 세 품질 기록의 Commit SHA 일치
-- [ ] Release Gate 통과
+- [ ] SPDX SBOM 존재
+- [ ] APK 설치 Smoke Test 통과
+- [ ] Build `SUCCEEDED`
+- [ ] APK/AAB Hash 확인
+- [ ] Release `CANDIDATE`
 - [ ] CEO 최종 승인 사유 기록
-- [ ] Artifact 다운로드 및 Hash 확인
-- [ ] 실제 서명 전에는 미서명 상태임을 명확히 표시
-- [ ] 감사 로그와 활동 기록 확인
+- [ ] 실제 signing 전 미서명 상태 확인
+- [ ] 감사 로그 확인
