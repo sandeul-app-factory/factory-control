@@ -110,12 +110,17 @@ $env:JAVA_HOME = $javaHome
 $env:ANDROID_HOME = $androidHome
 $env:ANDROID_SDK_ROOT = $androidHome
 $env:GRADLE_USER_HOME = Join-Path $workspaceRoot ".gradle"
+$registeredPath = @(
+  [Environment]::GetEnvironmentVariable("Path", "Machine"),
+  [Environment]::GetEnvironmentVariable("Path", "User")
+) -join [System.IO.Path]::PathSeparator
 $env:Path = @(
   $nodeDirectory,
   (Split-Path -Parent $codex),
   (Join-Path $javaHome "bin"),
   (Join-Path $androidHome "platform-tools"),
   (Join-Path $androidHome "cmdline-tools\latest\bin"),
+  $registeredPath,
   $env:Path
 ) -join [System.IO.Path]::PathSeparator
 

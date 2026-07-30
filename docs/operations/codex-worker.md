@@ -68,10 +68,21 @@ PowerShell 실행 정책이 `.ps1` 실행을 막는 시스템에서도 위 명�
 - OSV-Scanner: <https://google.github.io/osv-scanner/installation/>
 - Syft: <https://github.com/anchore/syft>
 
-Windows에서 `osv-scanner`는 공식 WinGet package
-`winget install Google.OSVScanner`를 지원한다. Semgrep은 공식 문서 기준 Python/pipx
-설치를 지원한다. 나머지는 공식 release 또는 Scoop/Chocolatey 설치 후 `*_BIN`
-환경변수로 절대 경로를 지정할 수 있다.
+현재 Windows 호스트의 설치 명령은 다음과 같다.
+
+```powershell
+winget install --id Gitleaks.Gitleaks -e
+winget install --id AquaSecurity.Trivy -e
+winget install --id Google.OSVScanner -e
+winget install --id Anchore.Syft -e
+python -m pip install --user pipx
+python -m pipx ensurepath
+python -m pipx install semgrep
+```
+
+Worker 시작 스크립트는 Windows에 등록된 machine/user `PATH`를 실행 시점에 다시
+병합하므로 WinGet과 pipx 실행 파일을 새 로그인 없이 찾을 수 있다. 별도 경로가
+필요한 호스트는 `*_BIN` 환경변수로 절대 경로를 지정한다.
 
 도구가 없어도 Worker는 시작하지만 자동 Security Scan에 HIGH Finding을 만들고 Release
 Gate를 차단한다.
