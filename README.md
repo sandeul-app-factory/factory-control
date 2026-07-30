@@ -1,8 +1,9 @@
 # Sandeul App Factory v2
 
-Android 앱 제작 공장의 중앙 Control Plane이다. ChatGPT가 MCP에서 최신 Build-ready
-PRD Schema를 조회하고 완성된 PRD를 업로드할 수 있으며, CEO가 요구사항·개발·테스트·
-보안·릴리스를 통제한다. Factory 백엔드는 OpenAI API를 호출하지 않는다.
+Android 앱 제작 공장의 중앙 Control Plane이다. ChatGPT Plus에서 사용자와 기획을
+완성하고 내려받은 Build-ready PRD를 사용자가 Factory 웹에 직접 업로드한다. Factory는
+서버 검증·CEO 승인·잠금·개발·테스트·보안·릴리스를 통제한다. Factory 백엔드는
+OpenAI API를 호출하지 않는다.
 
 ## 구현 범위
 
@@ -15,7 +16,7 @@ PRD Schema를 조회하고 완성된 PRD를 업로드할 수 있으며, CEO가 �
 - Fake/Real Codex Adapter, 별도 Worker, JSONL/SSE, 취소·재시도·DLQ, workspace 격리
 - 개발 시작 한 번으로 Codex→독립 테스트→보안검사→SBOM→APK/AAB→Release Gate 실행
 - Release Gate, Android 정적 보안 규칙, Signing Worker interface와 비활성 Stub
-- 기본 비활성 Streamable HTTP MCP endpoint와 Factory domain tool allowlist
+- 기본 비활성 Streamable HTTP MCP endpoint, 기본 read-only Tool 정책과 선택형 write flag
 - 개발/운영 Docker Compose, host Worker systemd, `factory.sandeul.work` cloudflared template
 
 ## 빠른 시작
@@ -49,6 +50,9 @@ docker compose --profile fake-worker up -d --build
 - Control Center: `http://localhost:3000`
 - OpenAPI: `http://localhost:4000/api/docs`
 - MinIO Console: `http://localhost:9001`
+
+PRD 작성 가이드와 최신 JSON Schema는 로그인 후 프로젝트의 `PRD` 화면에서 내려받는다.
+ChatGPT 프로젝트에 두 파일을 첨부해 기획을 완료한 뒤 최종 `prd.json`을 직접 제출한다.
 
 관리자 계정은 실행 시점에만 환경변수로 전달한다.
 

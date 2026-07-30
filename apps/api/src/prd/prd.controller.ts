@@ -3,12 +3,14 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Post,
   UploadedFile,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { androidBuildReadyPrdJsonSchema } from "@sandeul/contracts";
 import { CurrentAuth, CurrentRequest, Roles } from "../common/decorators.js";
 import type { FactoryRequest, RequestAuth } from "../common/request-context.js";
 import { PrdService } from "./prd.service.js";
@@ -43,12 +45,19 @@ export class PrdController {
       acceptanceCriteria?: string;
       includedArtifactIds?: string;
       excludedScope?: string;
+      submitForReview?: string;
     },
     @CurrentAuth() actor: RequestAuth,
     @CurrentRequest() request: FactoryRequest,
   ) {
     if (!file) throw new BadRequestException("PRD 파일이 필요합니다.");
-    return this.prds.upload(projectId, file, body, actor, request);
+    return this.prds.upload(projectId, file, { ...body, ingestionSource: "WEB" }, actor, request);
+  }
+
+  @Get("prd-authoring/schema")
+  @Header("Content-Disposition", 'attachment; filename="android-build-ready-v1.schema.json"')
+  downloadSchema() {
+    return androidBuildReadyPrdJsonSchema;
   }
 
   @Roles("CEO", "PM", "REVIEWER")

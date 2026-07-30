@@ -24,7 +24,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { DecisionsService } from "../decisions/decisions.service.js";
 import { PrdService } from "../prd/prd.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
-import { mcpToolNames, mcpTools } from "./tools.js";
+import { isMcpWriteTool, mcpToolNames, mcpTools } from "./tools.js";
 
 type JsonRpcId = string | number | null;
 
@@ -126,7 +126,7 @@ export class McpService {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "sandeul-app-factory", version: "2.0.0" },
           instructions:
-            "Factory domain tools only. Before writing or uploading a PRD, call factory.get_prd_schema and satisfy the returned latest schema. PRD upload never implies CEO approval, lock, or development start. Locked PRD and CEO governance remain authoritative.",
+            "Factory read tools are the default. Canonical PRDs are authored in ChatGPT, downloaded by the user, and uploaded manually through the Factory web UI. MCP write tools are exposed only when the operator explicitly enables MCP_WRITE_ENABLED=true. Manual upload never implies CEO approval, lock, or development start.",
         };
       } else if (parsed.method === "server/discover") {
         result = {
@@ -138,7 +138,9 @@ export class McpService {
         result = {};
       } else if (parsed.method === "tools/list") {
         result = {
-          tools: mcpTools.filter((tool) => this.hasScope(principal, tool.name)),
+          tools: mcpTools.filter(
+            (tool) => this.isToolEnabled(tool) && this.hasScope(principal, tool.name),
+          ),
           ttlMs: 60_000,
           cacheScope: "private",
         };
@@ -150,6 +152,15 @@ export class McpService {
         const toolName = params.data.name;
         if (!mcpToolNames.has(toolName)) {
           return rpcError(id, -32602, `Unknown tool: ${toolName}`);
+        }
+        const tool = mcpTools.find((candidate) => candidate.name === toolName);
+        if (!tool || !this.isToolEnabled(tool)) {
+          await this.recordRequest(principal, parsed.method, toolName, request, "DENIED");
+          return rpcError(
+            id,
+            -32602,
+            "MCP write tools are disabled. Upload the final PRD manually in the Factory web UI.",
+          );
         }
         if (!this.hasScope(principal, toolName)) {
           await this.recordRequest(principal, parsed.method, toolName, request, "DENIED");
@@ -346,12 +357,12 @@ export class McpService {
         formatRecommendation: "JSON",
         owners: fixedProductOwners,
         workflow: [
-          "프로젝트를 조회하거나 생성한다.",
-          "이 Schema를 완전히 충족하는 PRD를 작성한다.",
+          "이 Schema를 완전히 충족하는 PRD를 ChatGPT 대화에서 작성한다.",
           "미결정 사항을 숨기지 말고 openQuestions에 기록한다.",
-          "factory.upload_prd 또는 factory.create_prd_version으로 업로드한다.",
-          "반환된 versionNumber와 sha256을 사용자에게 보고한다.",
-          "사용자가 검토 요청까지 지시한 경우에만 factory.request_prd_review를 호출한다.",
+          "최종 prd.json과 사람이 읽을 prd.md를 사용자에게 파일로 제공한다.",
+          "사용자가 Factory 웹에서 최종 prd.json을 직접 업로드한다.",
+          "Factory 서버 검증 후 CEO가 최종 승인하고 PRD를 잠근다.",
+          "Repository 준비 후 CEO가 개발 시작을 눌러야 Codex 작업이 시작된다.",
         ],
         jsonSchema: androidBuildReadyPrdJsonSchema,
         markdownTemplate: androidBuildReadyPrdMarkdownTemplate,
@@ -449,9 +460,14 @@ export class McpService {
         acceptanceCriteria: stringArray(args.acceptanceCriteria),
         includedArtifactIds: stringArray(args.includedArtifactIds),
         excludedScope: stringArray(args.excludedScope),
+        ingestionSource: "MCP",
       },
       actor,
       request,
     );
+  }
+
+  private isToolEnabled(tool: (typeof mcpTools)[number]): boolean {
+    return !isMcpWriteTool(tool) || (process.env.MCP_WRITE_ENABLED ?? "false") === "true";
   }
 }

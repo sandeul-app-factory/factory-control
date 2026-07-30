@@ -251,6 +251,7 @@ export interface FactorySettings {
   codexAdapter: string;
   codexConcurrency: number;
   mcpEnabled: boolean;
+  mcpWriteEnabled: boolean;
   mcpCredentialCount: number;
   signingWorkerEnabled: boolean;
   sessionSecure: boolean;

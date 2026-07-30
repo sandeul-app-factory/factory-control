@@ -6,12 +6,14 @@ import {
   Activity,
   Archive,
   Blocks,
+  BookOpenCheck,
   Boxes,
   Building2,
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
   Code2,
+  Download,
   FileCheck2,
   FileText,
   Files,
@@ -338,6 +340,7 @@ function UploadPrdModal({
       data.set("acceptanceCriteria", JSON.stringify(criteria));
       data.set("excludedScope", JSON.stringify(excluded));
       data.set("includedArtifactIds", "[]");
+      data.set("submitForReview", "true");
       return apiRequest<PrdVersion>(`/projects/${projectId}/prds`, {
         method: "POST",
         body: data,
@@ -356,8 +359,8 @@ function UploadPrdModal({
   return (
     <Modal
       open={open}
-      title="Canonical PRD 업로드"
-      description=".md 또는 정의된 schema를 통과하는 .json만 Canonical PRD가 됩니다."
+      title="최종 Canonical PRD 제출"
+      description="ChatGPT에서 기획·수정을 끝낸 최종본을 직접 업로드합니다. 서버 검증을 통과하면 CEO 검토 대기로 제출됩니다."
       onClose={onClose}
     >
       <form
@@ -368,7 +371,7 @@ function UploadPrdModal({
         }}
       >
         <label className="grid gap-2 text-sm">
-          PRD 파일
+          최종 PRD 파일
           <input
             className="factory-input file:mr-3 file:rounded-md file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-zinc-200"
             name="file"
@@ -376,6 +379,10 @@ function UploadPrdModal({
             accept=".md,.json,text/markdown,application/json"
             required
           />
+          <span className="text-xs leading-5 text-zinc-500">
+            전체 Schema를 검사하는 JSON을 권장합니다. Markdown은 필수 제목과 별도 입력한 Acceptance
+            Criteria를 검사합니다.
+          </span>
         </label>
         <label className="grid gap-2 text-sm">
           Acceptance Criteria{" "}
@@ -392,7 +399,7 @@ function UploadPrdModal({
             취소
           </Button>
           <Button disabled={mutation.isPending} type="submit">
-            <Upload size={16} /> {mutation.isPending ? "검증·업로드 중…" : "새 버전 업로드"}
+            <Upload size={16} /> {mutation.isPending ? "검증·제출 중…" : "검증 후 CEO 검토로 제출"}
           </Button>
         </div>
       </form>
@@ -557,6 +564,58 @@ function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) 
   });
   return (
     <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)]">
+      <Card className="p-5 xl:col-span-2">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-2 text-emerald-300">
+              <BookOpenCheck size={19} />
+              <p className="text-sm font-semibold">수동 PRD 워크플로우</p>
+            </div>
+            <h2 className="mt-2 text-lg font-semibold">
+              ChatGPT Plus에서 기획을 완성한 뒤 최종본만 Factory에 제출하세요.
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">
+              가이드와 최신 JSON Schema를 ChatGPT 프로젝트에 첨부하고 반려·재기획을 마친 다음, 최종{" "}
+              <code>prd.json</code>을 업로드합니다. 업로드만으로 개발은 시작되지 않으며 CEO 최종
+              승인, PRD 잠금, Repository 준비와 개발 시작 버튼이 모두 필요합니다.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+              download
+              href="/templates/SANDEUL_ANDROID_PRD_GUIDE.md"
+            >
+              <Download size={16} /> 작성 가이드
+            </a>
+            <a
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+              download
+              href="/api/prd-authoring/schema"
+            >
+              <Download size={16} /> 최신 JSON Schema
+            </a>
+          </div>
+        </div>
+        <ol className="mt-5 grid gap-3 border-t border-zinc-800 pt-5 text-sm sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["1", "ChatGPT 기획", "가이드·Schema를 첨부하고 대화로 기획을 완성"],
+            ["2", "직접 제출", "최종 prd.json을 Factory에 업로드"],
+            ["3", "CEO 확정", "서버 검증 후 승인·SHA-256 잠금"],
+            ["4", "개발 시작", "Repository 준비 후 Codex 작업을 수동 시작"],
+          ].map(([number, title, description]) => (
+            <li className="flex gap-3" key={number}>
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-emerald-950 text-xs font-semibold text-emerald-300">
+                {number}
+              </span>
+              <span>
+                <strong className="block text-zinc-200">{title}</strong>
+                <span className="mt-1 block leading-5 text-zinc-500">{description}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </Card>
       <Card className="h-fit">
         <div className="flex items-center justify-between border-b border-zinc-800 p-4">
           <span className="text-sm font-semibold">PRD 버전</span>
@@ -701,8 +760,8 @@ function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) 
         ) : (
           <EmptyState
             icon={<FileText size={20} />}
-            title="PRD를 업로드하세요"
-            description="ChatGPT에서 완성한 Markdown 또는 구조화 JSON을 새 Canonical PRD로 등록합니다."
+            title="최종 PRD를 직접 제출하세요"
+            description="ChatGPT Plus에서 검토와 재기획을 끝낸 Markdown 또는 구조화 JSON을 서버 검증 후 CEO 검토 대기로 등록합니다."
             action={
               <Button onClick={() => setUploadOpen(true)}>
                 <Upload size={16} /> PRD 업로드
@@ -2392,7 +2451,14 @@ function SettingsView({ auth, onSignedOut }: { auth: AuthState; onSignedOut: () 
           ["Public URL", config?.publicUrl ?? "—"],
           ["GitHub", config?.githubAdapter ?? "—"],
           ["Codex", `${config?.codexAdapter ?? "—"} · 동시 ${config?.codexConcurrency ?? 1}`],
-          ["MCP", config?.mcpEnabled ? "활성" : "비활성"],
+          [
+            "MCP",
+            config?.mcpEnabled
+              ? config.mcpWriteEnabled
+                ? "활성 · 읽기/쓰기"
+                : "활성 · 읽기 전용"
+              : "비활성",
+          ],
           ["Signing Worker", config?.signingWorkerEnabled ? "활성" : "비활성 Stub"],
           ["Session Cookie", config?.sessionSecure ? "Secure" : "개발 모드"],
           ["SameSite", config?.sessionSameSite ?? "—"],
@@ -2409,12 +2475,17 @@ function SettingsView({ auth, onSignedOut }: { auth: AuthState; onSignedOut: () 
           <div>
             <h2 className="font-semibold">MCP Credential</h2>
             <p className="mt-2 text-sm text-zinc-500">
-              범용 Shell/SQL 없이 허용한 Factory Tool scope만 발급합니다. Endpoint:{" "}
+              수동 PRD가 기본 경로이며 ChatGPT Plus 사용에는 Credential이 필요하지 않습니다. MCP를
+              켠 경우에도 기본값은 읽기 전용입니다. Endpoint:{" "}
               <code>{config?.publicUrl ?? "https://factory.sandeul.work"}/api/mcp</code>
             </p>
           </div>
           <Badge tone={config?.mcpEnabled ? "success" : "warning"}>
-            {config?.mcpEnabled ? "MCP ENABLED" : "MCP DISABLED"}
+            {config?.mcpEnabled
+              ? config.mcpWriteEnabled
+                ? "MCP READ/WRITE"
+                : "MCP READ ONLY"
+              : "MCP DISABLED"}
           </Badge>
         </div>
         {issuedToken ? (
@@ -2459,7 +2530,7 @@ function SettingsView({ auth, onSignedOut }: { auth: AuthState; onSignedOut: () 
             className="factory-input"
             name="scopes"
             required
-            placeholder="factory.list_projects,factory.get_project"
+            placeholder="factory.get_prd_schema,factory.list_projects"
           />
           <input
             aria-label="분당 요청 수"

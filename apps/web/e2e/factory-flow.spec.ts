@@ -157,6 +157,7 @@ async function uploadPrd(
   projectId: string,
   name: string,
   markdown: string,
+  submitForReview = false,
 ) {
   return api<PrdVersion>(request, `/projects/${projectId}/prds`, {
     method: "POST",
@@ -170,6 +171,7 @@ async function uploadPrd(
       acceptanceCriteria: JSON.stringify(["핵심 흐름 E2E 통과", "Release Gate 통과"]),
       includedArtifactIds: "[]",
       excludedScope: JSON.stringify(["실제 Android signing"]),
+      submitForReview: String(submitForReview),
     },
   });
 }
@@ -210,25 +212,27 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
   const project = projects.find((item) => item.slug === slug);
   expect(project).toBeDefined();
 
+  const guide = await request.get("/templates/SANDEUL_ANDROID_PRD_GUIDE.md");
+  expect(guide.ok()).toBe(true);
+  expect(await guide.text()).toContain("ChatGPT Plus");
+  const schema = await api<{
+    properties: { schemaVersion: { const: string } };
+  }>(request, "/prd-authoring/schema");
+  expect(schema.properties.schemaVersion.const).toBe("android-build-ready/v1");
+
   const prd1 = await uploadPrd(
     request,
     auth.csrfToken,
     project!.id,
     "prd-v1.md",
     buildReadyMarkdown("초기 요구사항"),
+    true,
   );
-  const prd2 = await uploadPrd(
-    request,
-    auth.csrfToken,
-    project!.id,
-    "prd-v2.md",
-    buildReadyMarkdown("코멘트와 조건부 승인을 포함한 요구사항"),
-  );
-  expect(prd2.versionNumber).toBe(prd1.versionNumber + 1);
+  expect(prd1.status).toBe("IN_REVIEW");
 
   await api(request, `/projects/${project!.id}/prd-comments`, {
     ...mutation(auth.csrfToken, {
-      prdVersionId: prd2.id,
+      prdVersionId: prd1.id,
       body: "승인 전에 보안 제약을 명시해야 합니다.",
       anchorStart: 0,
       anchorEnd: 12,
@@ -241,7 +245,7 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
       scope: "빌드와 배포",
       priority: "CRITICAL",
       mandatory: true,
-      appliesPrdVersionId: prd2.id,
+      appliesPrdVersionId: prd1.id,
       reason: "빌드 실행 조직과 서명 권한을 분리하기 위해서입니다.",
     }),
   });
@@ -253,12 +257,11 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
       scope: "Release Candidate",
       priority: "HIGH",
       mandatory: true,
-      appliesPrdVersionId: prd2.id,
+      appliesPrdVersionId: prd1.id,
       reason: "실패를 성공으로 표시하지 않기 위해서입니다.",
     }),
   });
-  await api(request, `/prd-versions/${prd2.id}/request-review`, mutation(auth.csrfToken));
-  await api(request, `/prd-versions/${prd2.id}/approvals`, {
+  await api(request, `/prd-versions/${prd1.id}/approvals`, {
     ...mutation(auth.csrfToken, {
       action: "CONDITIONAL_APPROVE",
       title: "보안 제약 반영 조건부 승인",
@@ -270,15 +273,17 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
     }),
   });
 
-  const prd3 = await uploadPrd(
+  const prd2 = await uploadPrd(
     request,
     auth.csrfToken,
     project!.id,
-    "prd-v3.md",
+    "prd-v2.md",
     buildReadyMarkdown("보안 제약과 Release Gate가 반영된 최종 요구사항"),
+    true,
   );
-  await api(request, `/prd-versions/${prd3.id}/request-review`, mutation(auth.csrfToken));
-  await api(request, `/prd-versions/${prd3.id}/approvals`, {
+  expect(prd2.versionNumber).toBe(prd1.versionNumber + 1);
+  expect(prd2.status).toBe("IN_REVIEW");
+  await api(request, `/prd-versions/${prd2.id}/approvals`, {
     ...mutation(auth.csrfToken, {
       action: "APPROVE",
       title: "최종 PRD 승인",
@@ -289,15 +294,20 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
       reason: "개발 기준으로 확정합니다.",
     }),
   });
-  await api(request, `/prd-versions/${prd3.id}/lock`, mutation(auth.csrfToken));
+  await api(request, `/prd-versions/${prd2.id}/lock`, mutation(auth.csrfToken));
 
-  const diff = await api<JsonRecord>(request, `/prd-versions/${prd2.id}/diff/${prd3.id}`);
+  const diff = await api<JsonRecord>(request, `/prd-versions/${prd1.id}/diff/${prd2.id}`);
   expect(diff).toBeTruthy();
 
   await openProject(page, projectName);
   const main = page.locator("main");
   await main.getByRole("button", { name: "PRD", exact: true }).click();
-  await expect(main.getByText("PRD v3", { exact: true })).toBeVisible();
+  await expect(main.getByText("수동 PRD 워크플로우", { exact: true })).toBeVisible();
+  await expect(main.getByRole("link", { name: "작성 가이드" })).toHaveAttribute(
+    "href",
+    "/templates/SANDEUL_ANDROID_PRD_GUIDE.md",
+  );
+  await expect(main.getByText("PRD v2", { exact: true })).toBeVisible();
   await expect(main.getByText("LOCKED", { exact: true }).first()).toBeVisible();
 
   const repository = await api<{

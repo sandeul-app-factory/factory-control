@@ -1,15 +1,16 @@
 # Sandeul App Factory CEO 사용설명서
 
-이 문서는 ChatGPT에서 PRD를 만들고 Factory에 업로드한 뒤, CEO 승인 한 번과 개발 시작
-한 번으로 Codex 개발·독립 테스트·보안검사·SBOM·Android 빌드·Release Candidate
-생성까지 진행하는 절차를 설명한다.
+이 문서는 ChatGPT Plus에서 PRD 기획과 수정 작업을 끝낸 뒤 최종 파일을 Factory 웹에
+직접 업로드하고, CEO 승인 한 번과 개발 시작 한 번으로 Codex 개발·독립 테스트·
+보안검사·SBOM·Android 빌드·Release Candidate 생성까지 진행하는 절차를 설명한다.
 
 ## 1. 역할과 승인 경계
 
 - ChatGPT는 PM이다. 시장조사와 제품 판단을 거쳐 PRD를 작성한다.
 - Factory 백엔드는 OpenAI API를 호출하지 않는다.
-- MCP를 연결하면 ChatGPT가 Factory의 최신 PRD Schema를 읽고 PRD를 직접 업로드할 수
-  있다.
+- 사용자는 Factory에서 내려받은 가이드와 Schema를 ChatGPT 프로젝트에 첨부한다.
+- 최종 PRD는 사용자가 Factory 웹에 직접 업로드하며 서버가 Schema를 다시 검증한다.
+- MCP는 기본 비활성이고, 활성화해도 별도 write flag가 없으면 읽기 Tool만 노출한다.
 - CEO만 최종 PRD 승인, 개발 시작, 위험 수용, Release Candidate 승인을 할 수 있다.
 - Codex는 잠긴 PRD와 승인 기록을 변경하지 않고 구현만 담당한다.
 - GitHub가 소스코드의 유일한 원본이다.
@@ -20,11 +21,13 @@
 
 ```text
 ChatGPT PM 조사·PRD 작성
-  → MCP Schema 조회
+  → 사용자 초안 검토·반려·재기획
+  → 최종 prd.json + prd.md 생성
   → Factory 프로젝트 생성/선택
-  → PRD DRAFT 업로드
+  → 사용자가 최종 prd.json 직접 업로드
+  → 서버 Schema 검증
+  → CEO 검토 대기
   → CEO 코멘트·제약사항·Decision Record
-  → 검토 요청
   → 조건부 승인/수정 요청/반려 또는 최종 승인
   → 최종 승인 시 PRD 자동 잠금
   → GitHub Repository 생성 또는 연결
@@ -90,56 +93,58 @@ Docker의 Fake Worker는 기본 Compose에서 실행되지 않는다. Fake E2E�
 docker compose --profile fake-worker up -d --build
 ```
 
-## 4. ChatGPT MCP로 PRD 만들기
+## 4. ChatGPT Plus에서 PRD 만들기
 
-### MCP가 자동으로 아는 내용
+### 작성 자료 내려받기
 
-MCP `tools/list`에는 `factory.get_prd_schema`가 노출된다. Tool 설명은 PRD 작성 전에 이
-도구를 먼저 호출하도록 지시한다. 반환값에는 다음이 포함된다.
+1. Factory에서 프로젝트를 만든다.
+2. 프로젝트의 `PRD` 탭을 연다.
+3. `작성 가이드`를 내려받는다.
+4. `최신 JSON Schema`를 내려받는다.
+5. ChatGPT 프로젝트에 두 파일을 첨부한다.
 
-- Schema version `android-build-ready/v1`
-- 전체 JSON Schema
-- Build-ready Markdown Template
-- 고정 담당자 `산들`, `수빈`
-- 업로드와 검토 요청 순서
+작성 가이드에는 PM 역할, 조사·질문·반려 절차, 전체 필드 규칙, 담당자 `산들`·`수빈`,
+Android·보안·개인정보·테스트·Release Gate와 최종 자체 검증 목록이 들어 있다. JSON
+Schema가 실제 서버 검증의 최종 기준이다.
 
-따라서 ChatGPT에게 필드 목록, Android SDK 기준, 담당자를 매번 설명할 필요가 없다.
-다만 외부 시스템에 쓰는 작업이므로 첫 요청에는 “Factory에 업로드해 줘”라는 의도를
-명확히 포함한다.
-
-권장 요청:
+### 기획 요청
 
 ```text
-이 아이디어를 시장성·경쟁사·수익성·기술·보안·개인정보 관점에서 검토해줘.
-Factory MCP의 최신 PRD Schema를 먼저 확인하고, 담당자는 산들·수빈으로 유지해.
-배포 가능한 Android 앱 수준의 구체적인 PRD를 작성해서 Factory 프로젝트를 만들고
-PRD DRAFT로 업로드한 다음 검토 요청까지 해줘. 승인이나 개발 시작은 하지 마.
+첨부한 Sandeul Android App PRD 작성 가이드와 최신 JSON Schema를 기준으로
+새 Android 앱을 기획해줘.
+
+먼저 내 아이디어를 구체화하는 데 꼭 필요한 질문만 순서대로 해줘.
+시장성, 경쟁 제품, 수익성, 기술 가능성, 운영, 보안, 개인정보, Play Store 위험을
+검토하되 확인된 사실과 추정을 구분해줘.
+
+내가 초안을 검토하고 명시적으로 최종본 생성을 요청하기 전에는 prd.json을
+확정하지 마. 최종 요청 후에는 Factory Schema를 통과하는 prd.json과 동일 내용의
+prd.md를 각각 다운로드 가능한 파일로 제공하고 자체 검증 결과도 보고해줘.
 ```
 
-ChatGPT는 다음 순서로 Tool을 사용해야 한다.
+초안을 검토하면서 반려·수정·재기획을 반복한다. 최종본 요청 전에는 Factory에 아무것도
+업로드할 필요가 없다.
 
-1. `factory.get_prd_schema`
-2. `factory.list_projects` 또는 `factory.create_project`
-3. `factory.upload_prd` 또는 `factory.create_prd_version`
-4. 사용자 요청에 포함된 경우 `factory.request_prd_review`
-5. 생성된 Project ID, PRD version, SHA-256을 보고
+### 최종 파일 제출
 
-MCP는 승인, 잠금, 개발 시작, PR 병합, 서명 Tool을 제공하지 않는다. 이 작업은 CEO
-Control Center에서 수행한다.
+1. ChatGPT에서 `prd.json`과 `prd.md`를 내려받는다.
+2. 두 파일의 기능 범위, 제외 범위, 개인정보와 Acceptance Criteria가 같은지 확인한다.
+3. Factory `PRD` 탭에서 `최종 PRD 제출`을 누른다.
+4. `prd.json`을 선택하고 제출한다.
+5. 서버는 파일을 Object Storage에 저장하기 전에 JSON Schema를 검증한다.
+6. 성공하면 새 immutable PRD version과 SHA-256을 만들고 `IN_REVIEW`로 제출한다.
+7. 실패하면 저장하지 않고 누락 필드와 잘못된 참조를 오류로 반환한다. 오류를 ChatGPT에
+   전달해 새 최종 파일을 만든다.
 
-### MCP 설정 점검
+JSON을 권장한다. Markdown도 지원하지만 전체 JSON Schema가 아니라 필수 제목, 담당자,
+SDK, release debuggable과 사용자가 별도 입력한 Acceptance Criteria를 검증한다.
 
-`.env`의 최소 설정:
+### MCP의 위치
 
-```dotenv
-MCP_ENABLED=true
-MCP_TOKEN_PEPPER=<운영자가 생성해 보관한 강한 Secret>
-MCP_CREDENTIAL_SCOPES=factory.get_prd_schema,factory.list_projects,factory.get_project,factory.get_project_status,factory.create_project,factory.upload_prd,factory.create_prd_version,factory.request_prd_review
-```
-
-`MCP_TOKEN_PEPPER`가 비어 있으면 인증된 MCP 요청도 거부된다. 기존 Credential의 scope는
-자동 변경되지 않으므로 새 Tool scope가 없는 Credential은 CEO 설정 화면에서 폐기하고
-새 Credential을 발급한다. 새 token은 한 번만 표시된다.
+기본 수동 흐름에는 MCP가 필요 없다. `MCP_ENABLED=false`와
+`MCP_WRITE_ENABLED=false`가 기본이다. 운영자가 MCP를 선택적으로 켜더라도 write flag를
+켜지 않으면 Schema·프로젝트·Artifact 조회 Tool만 노출한다. 향후 Business/Enterprise
+자동화를 다시 사용할 때만 MCP write를 별도로 활성화한다.
 
 ## 5. Build-ready PRD 기준
 
@@ -177,7 +182,7 @@ JSON은 다음 범주를 모두 구조화한다.
 2. 섹션 또는 inline 코멘트를 작성한다.
 3. `CEO 제약사항`에 변경 불가능한 제약을 기록한다.
 4. `의사결정 기록`에 기능 추가·제외, 우선순위, 수익모델, 기술·보안 판단을 기록한다.
-5. `검토 요청`을 누른다.
+5. 수동 웹 업로드가 성공하면 PRD는 이미 `IN_REVIEW` 상태다.
 6. 승인 Modal에서 조건부 승인, 수정 요청, 반려, 보류 또는 최종 승인을 선택한다.
 
 조건부 승인이나 수정 요청 후에는 기존 PRD를 고치지 않고 새 버전을 업로드한다. 최종
@@ -374,24 +379,25 @@ Signing Worker가 승인 Commit, PRD Hash, Test Run, Security Scan, Build Hash�
 
 ## 13. 실패와 재작업
 
-| 실패                                | 처리                                                          |
-| ----------------------------------- | ------------------------------------------------------------- |
-| PRD Schema 검증 실패                | ChatGPT가 `factory.get_prd_schema`를 다시 읽고 새 버전 업로드 |
-| Codex `BLOCKED`/`FAILED`            | 질문·가정을 검토하고 후속 지시                                |
-| Gradle test/lint/detekt/ktlint 실패 | `FIX_TEST` 작업                                               |
-| CRITICAL/HIGH Finding               | `FIX_SECURITY` 작업                                           |
-| Scanner 또는 Syft 미설치            | Worker 도구 설치 후 재작업                                    |
-| APK/AAB 빌드 실패                   | Gradle 로그를 기준으로 수정                                   |
-| Emulator 미설정 또는 APK 설치 실패  | 전용 Emulator와 `ANDROID_SMOKE_TEST_SERIAL` 설정              |
-| Acceptance Criteria 증거 누락       | 구현·테스트 보완 후 새 Codex Run                              |
-| GitHub push/PR 실패                 | GitHub 권한·네트워크 확인 후 재시도                           |
-| Object Storage 실패                 | MinIO/S3 상태를 복구하고 같은 Job 재시도                      |
-| Gate 차단                           | 실패 기록을 수정하지 말고 새 Commit과 새 품질 기록 생성       |
+| 실패                                | 처리                                                    |
+| ----------------------------------- | ------------------------------------------------------- |
+| PRD Schema 검증 실패                | 오류와 최신 Schema를 ChatGPT에 전달해 새 최종 파일 생성 |
+| Codex `BLOCKED`/`FAILED`            | 질문·가정을 검토하고 후속 지시                          |
+| Gradle test/lint/detekt/ktlint 실패 | `FIX_TEST` 작업                                         |
+| CRITICAL/HIGH Finding               | `FIX_SECURITY` 작업                                     |
+| Scanner 또는 Syft 미설치            | Worker 도구 설치 후 재작업                              |
+| APK/AAB 빌드 실패                   | Gradle 로그를 기준으로 수정                             |
+| Emulator 미설정 또는 APK 설치 실패  | 전용 Emulator와 `ANDROID_SMOKE_TEST_SERIAL` 설정        |
+| Acceptance Criteria 증거 누락       | 구현·테스트 보완 후 새 Codex Run                        |
+| GitHub push/PR 실패                 | GitHub 권한·네트워크 확인 후 재시도                     |
+| Object Storage 실패                 | MinIO/S3 상태를 복구하고 같은 Job 재시도                |
+| Gate 차단                           | 실패 기록을 수정하지 말고 새 Commit과 새 품질 기록 생성 |
 
 ## 14. 운영 체크리스트
 
-- [ ] MCP Token pepper와 Credential scope 설정
-- [ ] ChatGPT가 최신 PRD Schema를 조회한 기록 확인
+- [ ] Factory에서 최신 작성 가이드와 JSON Schema 다운로드
+- [ ] ChatGPT 프로젝트에 두 파일을 첨부하고 최종본 자체 검증
+- [ ] 사용자가 최종 `prd.json` 직접 업로드
 - [ ] 담당자 `산들`, `수빈`
 - [ ] PRD 최종 승인과 자동 `LOCKED`
 - [ ] Repository `REPO_READY`

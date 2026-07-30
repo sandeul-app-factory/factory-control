@@ -263,3 +263,11 @@ export const mcpTools: readonly McpToolDefinition[] = [
 ] as const;
 
 export const mcpToolNames = new Set(mcpTools.map((tool) => tool.name));
+
+export function isMcpWriteTool(tool: McpToolDefinition): boolean {
+  return !tool.annotations.readOnlyHint;
+}
+
+export function mcpToolsForMode(writeEnabled: boolean): readonly McpToolDefinition[] {
+  return mcpTools.filter((tool) => writeEnabled || !isMcpWriteTool(tool));
+}

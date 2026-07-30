@@ -2,9 +2,10 @@
 
 ## 목적
 
-Sandeul App Factory v2는 Android 앱 제작 과정의 중앙 Control Plane이다. ChatGPT는
-MCP에서 최신 PRD Schema를 읽고 Canonical PRD를 업로드할 수 있으며, CEO는 Factory에서
-승인·잠금·개발 시작을 통제한다. Factory 백엔드는 OpenAI API를 호출하지 않는다.
+Sandeul App Factory v2는 Android 앱 제작 과정의 중앙 Control Plane이다. 사용자는
+ChatGPT Plus에서 가이드와 JSON Schema를 첨부해 PRD를 완성하고 최종 파일을 Factory
+웹에 직접 업로드한다. CEO는 Factory에서 서버 검증 결과, 승인·잠금·개발 시작을
+통제한다. Factory 백엔드는 OpenAI API를 호출하지 않는다.
 
 ## 시스템 경계
 
@@ -81,7 +82,11 @@ Next.js Web ───── REST + SSE ───── NestJS API
 ## 중요한 설계 결정
 
 - Backend의 OpenAI API 호출은 구현하지 않는다.
-- MCP는 `MCP_ENABLED=false`가 기본이며 제한된 domain tool만 제공한다.
+- 수동 PRD 업로드가 기본이며 업로드는 서버 검증 후 CEO 검토 대기로 제출된다.
+- MCP는 `MCP_ENABLED=false`가 기본이고, 활성화해도 `MCP_WRITE_ENABLED=false`이면
+  read-only Tool만 노출한다.
+- MCP write는 향후 Business/Enterprise 자동화용 선택 기능이며 수동 경로를 우회해
+  승인·잠금·개발을 시작할 수 없다.
 - 자동 PR merge는 구현하지 않는다.
 - 동시 Codex 실행 기본값은 1이다.
 - CRITICAL/HIGH finding, 테스트/빌드/SBOM 실패는 release를 차단한다.

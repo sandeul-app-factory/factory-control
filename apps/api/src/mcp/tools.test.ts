@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mcpTools } from "./tools.js";
+import { isMcpWriteTool, mcpTools, mcpToolsForMode } from "./tools.js";
 
 describe("MCP tool exposure", () => {
   it("exposes only the approved domain allowlist", () => {
@@ -23,5 +23,18 @@ describe("MCP tool exposure", () => {
     const names = mcpTools.map((tool) => tool.name).join(" ");
     expect(names).not.toMatch(/shell|sql|delete|merge|sign|rotate/i);
     expect(mcpTools.every((tool) => tool.annotations.destructiveHint === false)).toBe(true);
+  });
+
+  it("defaults to read-only tools and requires an explicit mode for writes", () => {
+    expect(mcpToolsForMode(false).map((tool) => tool.name)).toEqual([
+      "factory.get_prd_schema",
+      "factory.list_projects",
+      "factory.get_project",
+      "factory.get_project_status",
+      "factory.list_artifacts",
+      "factory.read_artifact",
+    ]);
+    expect(mcpToolsForMode(true)).toHaveLength(mcpTools.length);
+    expect(mcpTools.filter(isMcpWriteTool)).toHaveLength(6);
   });
 });

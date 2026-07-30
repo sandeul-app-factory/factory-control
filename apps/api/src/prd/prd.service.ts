@@ -27,6 +27,8 @@ interface UploadPrdInput {
   acceptanceCriteria?: string | undefined;
   includedArtifactIds?: string | undefined;
   excludedScope?: string | undefined;
+  submitForReview?: string | undefined;
+  ingestionSource?: "WEB" | "MCP" | undefined;
 }
 
 @Injectable()
@@ -160,8 +162,18 @@ export class PrdService {
       projectId,
       requestId: request.requestId,
       outcome: "SUCCESS",
-      metadata: { versionNumber, sha256: prd.sha256, canonicalFormat },
+      metadata: {
+        versionNumber,
+        sha256: prd.sha256,
+        canonicalFormat,
+        ingestionSource: input.ingestionSource ?? "WEB",
+        submittedForReview: input.submitForReview === "true",
+      },
     });
+    if (input.submitForReview === "true") {
+      await this.requestReview(prd.id, actor, request);
+      return this.get(prd.id);
+    }
     return prd;
   }
 

@@ -35,6 +35,7 @@ export class SettingsService {
       codexAdapter: process.env.CODEX_ADAPTER ?? "fake",
       codexConcurrency: Number(process.env.CODEX_CONCURRENCY ?? 1),
       mcpEnabled: (process.env.MCP_ENABLED ?? "false") === "true",
+      mcpWriteEnabled: (process.env.MCP_WRITE_ENABLED ?? "false") === "true",
       mcpCredentialCount,
       signingWorkerEnabled: (process.env.SIGNING_WORKER_ENABLED ?? "false") === "true",
       sessionSecure: (process.env.SESSION_SECURE ?? "true") === "true",
