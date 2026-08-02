@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { sha256 } from "@sandeul/security";
@@ -383,6 +383,8 @@ interface WindowsWorkspaceAclOptions {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   run?: AclCommandRunner;
+  readMarker?: (path: string) => Promise<string | undefined>;
+  writeMarker?: (path: string, value: string) => Promise<void>;
 }
 
 const runAclCommand: AclCommandRunner = async (executable, args) => {
@@ -391,6 +393,19 @@ const runAclCommand: AclCommandRunner = async (executable, args) => {
     maxBuffer: 16 * 1024 * 1024,
   });
 };
+
+async function readAclMarker(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function writeAclMarker(path: string, value: string): Promise<void> {
+  await writeFile(path, value, { encoding: "utf8", mode: 0o600 });
+}
 
 export async function prepareWindowsWorkspaceAcl(
   workspacePath: string,
@@ -413,6 +428,11 @@ export async function prepareWindowsWorkspaceAcl(
   if (!fromRoot || fromRoot.startsWith("..") || isAbsolute(fromRoot)) {
     throw new Error("Codex workspace must be a child of CODEX_WORKSPACE_ROOT");
   }
+  const markerPath = join(dirname(workspace), ".codex-windows-acl-v1");
+  const markerValue = JSON.stringify({ version: 1, workspace, group });
+  const readMarker = options.readMarker ?? readAclMarker;
+  const writeMarker = options.writeMarker ?? writeAclMarker;
+  if ((await readMarker(markerPath)) === markerValue) return;
   const run = options.run ?? runAclCommand;
   await run("icacls.exe", [workspace, "/grant:r", `${group}:(OI)(CI)(M)`, "/T", "/C", "/Q"]);
 
@@ -420,6 +440,7 @@ export async function prepareWindowsWorkspaceAcl(
   await run("icacls.exe", [gitDirectory, "/inheritance:d", "/T", "/C", "/Q"]);
   await run("icacls.exe", [gitDirectory, "/remove:g", group, "/T", "/C", "/Q"]);
   await run("icacls.exe", [gitDirectory, "/grant:r", `${group}:(OI)(CI)(RX)`, "/T", "/C", "/Q"]);
+  await writeMarker(markerPath, markerValue);
 }
 
 function parseJsonlEvent(line: string): CodexEvent {

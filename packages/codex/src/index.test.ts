@@ -81,18 +81,27 @@ describe("Codex execution contract", () => {
 
   it("grants task workspace writes while keeping git metadata read-only on Windows", async () => {
     const calls: Array<{ executable: string; args: string[] }> = [];
-    await prepareWindowsWorkspaceAcl("C:\\factory\\project\\task\\run\\repository", {
+    let marker: string | undefined;
+    const options = {
       platform: "win32",
       env: {
         CODEX_WORKSPACE_ROOT: "C:\\factory",
         CODEX_WINDOWS_SANDBOX_GROUP: "FACTORY\\CodexSandboxUsers",
       },
-      run: (executable, args) => {
+      run: (executable: string, args: string[]) => {
         calls.push({ executable, args });
         return Promise.resolve();
       },
-    });
+      readMarker: () => Promise.resolve(marker),
+      writeMarker: (_path: string, value: string) => {
+        marker = value;
+        return Promise.resolve();
+      },
+    } as const;
+    await prepareWindowsWorkspaceAcl("C:\\factory\\project\\task\\run\\repository", options);
+    await prepareWindowsWorkspaceAcl("C:\\factory\\project\\task\\run\\repository", options);
     expect(calls).toHaveLength(4);
+    expect(marker).toContain('"version":1');
     expect(calls[0]?.args).toContain("FACTORY\\CodexSandboxUsers:(OI)(CI)(M)");
     expect(calls.every(({ args }) => args.includes("/Q"))).toBe(true);
     expect(calls[3]?.args).toContain("FACTORY\\CodexSandboxUsers:(OI)(CI)(RX)");
