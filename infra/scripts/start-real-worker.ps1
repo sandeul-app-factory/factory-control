@@ -2,6 +2,7 @@
 param(
   [switch]$Watch,
   [switch]$CheckOnly,
+  [switch]$SkipBuild,
   [string]$EnvironmentFile = ".env"
 )
 
@@ -176,9 +177,11 @@ try {
   if ($Watch) {
     & $pnpm --filter "@sandeul/worker" dev
   } else {
-    & $pnpm --filter "@sandeul/worker..." build
-    if ($LASTEXITCODE -ne 0) {
-      throw "Worker build failed."
+    if (-not $SkipBuild) {
+      & $pnpm --filter "@sandeul/worker..." build
+      if ($LASTEXITCODE -ne 0) {
+        throw "Worker build failed."
+      }
     }
     & $pnpm --filter "@sandeul/worker" start
   }

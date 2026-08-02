@@ -13,6 +13,7 @@ CODEX_BIN=C:/Users/user/AppData/Local/Programs/OpenAI/Codex/bin/codex.exe
 CODEX_HOME=C:/Users/user/.codex
 CODEX_WORKSPACE_ROOT=C:/Users/user/Desktop/SH/dev/sandeul-app-factory/.factory-workspaces
 CODEX_RESULT_SCHEMA_PATH=C:/Users/user/Desktop/SH/dev/sandeul-app-factory/schemas/codex/codex-result.schema.json
+CODEX_TERMINAL_EVENT_GRACE_MS=10000
 JAVA_HOME=C:/Program Files/Android/Android Studio/jbr
 ANDROID_HOME=C:/Users/user/AppData/Local/Android/Sdk
 GRADLE_USER_HOME=C:/Users/user/Desktop/SH/dev/sandeul-app-factory/.factory-workspaces/.gradle
@@ -39,6 +40,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\infra\scripts\start-real-worker.ps1
 ```
+
+이미 빌드 검증이 끝난 바이너리를 재시작할 때는 `-SkipBuild`를 사용할 수 있다. 운영
+배포 전 최초 실행에는 사용하지 않는다.
+
+Windows에서 Codex가 `turn.completed`와 유효한 결과 파일을 기록한 뒤에도 종료되지
+않으면 Worker는 기본 10초를 기다린다. 이후 결과 Schema를 다시 검증하고 잔류
+프로세스 트리를 종료한 다음 정상적인 결과 처리 단계로 진행한다.
 
 개발 중 watch:
 

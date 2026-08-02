@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -87,6 +87,24 @@ export interface CodexAdapter {
     input: CodexExecutionInput,
     onEvent: (event: CodexEvent) => Promise<void>,
   ): Promise<CodexExecutionOutput>;
+}
+
+type CodexProcessSpawner = (
+  executable: string,
+  args: string[],
+  options: {
+    cwd: string;
+    shell: false;
+    windowsHide: true;
+    stdio: ["pipe", "pipe", "pipe"];
+    env: NodeJS.ProcessEnv;
+  },
+) => ChildProcessWithoutNullStreams;
+
+interface RealCodexAdapterOptions {
+  spawnProcess?: CodexProcessSpawner;
+  terminateProcessTree?: (child: ChildProcessWithoutNullStreams) => Promise<void>;
+  terminalEventGraceMs?: number;
 }
 
 const immutableRules = [
@@ -202,6 +220,8 @@ export class FakeCodexAdapter implements CodexAdapter {
 export class RealCodexAdapter implements CodexAdapter {
   readonly name = "real" as const;
 
+  constructor(private readonly options: RealCodexAdapterOptions = {}) {}
+
   async execute(
     input: CodexExecutionInput,
     onEvent: (event: CodexEvent) => Promise<void>,
@@ -222,7 +242,8 @@ export class RealCodexAdapter implements CodexAdapter {
       const permissionArguments = permissionProfile
         ? ["-c", `default_permissions=${JSON.stringify(permissionProfile)}`]
         : ["--sandbox", sandbox];
-      const child = spawn(
+      const spawnProcess: CodexProcessSpawner = this.options.spawnProcess ?? spawn;
+      const child = spawnProcess(
         executable,
         [
           "exec",
@@ -245,51 +266,115 @@ export class RealCodexAdapter implements CodexAdapter {
       let stderr = "";
       let stdoutBuffer = "";
       const pendingEvents: Promise<void>[] = [];
+      let settled = false;
+      let finalizing = false;
+      let terminalEventTimer: NodeJS.Timeout | undefined;
+      const terminalEventGraceMs =
+        this.options.terminalEventGraceMs ?? readTerminalEventGraceMs(process.env);
+      const terminateProcessTree = this.options.terminateProcessTree ?? stopProcessTree;
       const abort = (): void => {
-        child.kill("SIGTERM");
-        const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
-        timer.unref();
+        void terminateProcessTree(child).catch(() => child.kill("SIGKILL"));
+      };
+      const cleanup = (): void => {
+        if (terminalEventTimer) clearTimeout(terminalEventTimer);
+        input.signal.removeEventListener("abort", abort);
+      };
+      const rejectOnce = (error: unknown): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error instanceof Error ? error : new Error(String(error)));
       };
       input.signal.addEventListener("abort", abort, { once: true });
+      const emitLine = (line: string): void => {
+        if (!line.trim()) return;
+        const event = parseJsonlEvent(line);
+        pendingEvents.push(onEvent(event));
+        if (event.type === "turn.completed" && !terminalEventTimer) {
+          terminalEventTimer = setTimeout(() => {
+            void finalize(0, true);
+          }, terminalEventGraceMs);
+          terminalEventTimer.unref();
+        }
+      };
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
         stdoutBuffer += chunk;
         const lines = stdoutBuffer.split(/\r?\n/);
         stdoutBuffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          pendingEvents.push(onEvent(parseJsonlEvent(line)));
-        }
+        for (const line of lines) emitLine(line);
       });
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", (chunk: string) => {
         stderr = `${stderr}${chunk}`.slice(-8_000);
       });
-      child.on("error", reject);
-      child.on("close", (code) => {
-        input.signal.removeEventListener("abort", abort);
-        void (async () => {
+      const finalize = async (code: number, recoverHungProcess: boolean): Promise<void> => {
+        if (settled || finalizing) return;
+        finalizing = true;
+        try {
+          if (stdoutBuffer.trim()) {
+            emitLine(stdoutBuffer);
+            stdoutBuffer = "";
+          }
           await Promise.all(pendingEvents);
           if (input.signal.aborted) {
-            reject(
-              input.signal.reason instanceof Error
-                ? input.signal.reason
-                : new Error("Codex run cancelled"),
-            );
-            return;
+            throw input.signal.reason instanceof Error
+              ? input.signal.reason
+              : new Error("Codex run cancelled");
           }
-          if (code !== 0) {
-            reject(new Error(`Codex CLI 종료 코드 ${String(code)}: ${stderr}`));
-            return;
+          if (!recoverHungProcess && code !== 0) {
+            throw new Error(`Codex CLI 종료 코드 ${String(code)}: ${stderr}`);
           }
           const raw: unknown = JSON.parse(await readFile(input.outputPath, "utf8"));
           const result = codexResultSchema.parse(raw);
+          if (recoverHungProcess) {
+            await onEvent({
+              type: "codex.process_recovered",
+              level: "WARN",
+              message:
+                "Codex emitted turn.completed but did not exit; the validated result was recovered and the remaining process tree was stopped.",
+            });
+          }
+          settled = true;
+          cleanup();
+          if (recoverHungProcess) await terminateProcessTree(child);
           resolve({ exitCode: code, result, finalMessage: result.summary });
-        })().catch(reject);
+        } catch (error) {
+          settled = true;
+          cleanup();
+          if (recoverHungProcess) await terminateProcessTree(child).catch(() => undefined);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      };
+      child.on("error", rejectOnce);
+      child.on("close", (code) => {
+        void finalize(code ?? -1, false);
       });
       child.stdin.end(input.prompt, "utf8");
     });
   }
+}
+
+function readTerminalEventGraceMs(source: NodeJS.ProcessEnv): number {
+  const value = Number(source.CODEX_TERMINAL_EVENT_GRACE_MS ?? 10_000);
+  return Number.isSafeInteger(value) && value >= 1_000 && value <= 60_000 ? value : 10_000;
+}
+
+async function stopProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (!child.pid) {
+    child.kill("SIGKILL");
+    return;
+  }
+  if (process.platform === "win32") {
+    await promisify(execFile)("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    }).catch(() => undefined);
+    return;
+  }
+  child.kill("SIGTERM");
+  const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+  timer.unref();
 }
 
 type AclCommandRunner = (executable: string, args: string[]) => Promise<void>;
@@ -303,7 +388,7 @@ interface WindowsWorkspaceAclOptions {
 const runAclCommand: AclCommandRunner = async (executable, args) => {
   await promisify(execFile)(executable, args, {
     windowsHide: true,
-    maxBuffer: 1024 * 1024,
+    maxBuffer: 16 * 1024 * 1024,
   });
 };
 
@@ -329,12 +414,12 @@ export async function prepareWindowsWorkspaceAcl(
     throw new Error("Codex workspace must be a child of CODEX_WORKSPACE_ROOT");
   }
   const run = options.run ?? runAclCommand;
-  await run("icacls.exe", [workspace, "/grant:r", `${group}:(OI)(CI)(M)`, "/T", "/C"]);
+  await run("icacls.exe", [workspace, "/grant:r", `${group}:(OI)(CI)(M)`, "/T", "/C", "/Q"]);
 
   const gitDirectory = join(workspace, ".git");
-  await run("icacls.exe", [gitDirectory, "/inheritance:d", "/T", "/C"]);
-  await run("icacls.exe", [gitDirectory, "/remove:g", group, "/T", "/C"]);
-  await run("icacls.exe", [gitDirectory, "/grant:r", `${group}:(OI)(CI)(RX)`, "/T", "/C"]);
+  await run("icacls.exe", [gitDirectory, "/inheritance:d", "/T", "/C", "/Q"]);
+  await run("icacls.exe", [gitDirectory, "/remove:g", group, "/T", "/C", "/Q"]);
+  await run("icacls.exe", [gitDirectory, "/grant:r", `${group}:(OI)(CI)(RX)`, "/T", "/C", "/Q"]);
 }
 
 function parseJsonlEvent(line: string): CodexEvent {

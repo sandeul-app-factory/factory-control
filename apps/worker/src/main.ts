@@ -540,6 +540,12 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
         promptSha256: prompt.sha256,
         workspacePath: repositoryPath,
         startedAt: new Date(),
+        finishedAt: null,
+        exitCode: null,
+        resultJson: Prisma.JsonNull,
+        finalMessage: null,
+        errorCode: null,
+        errorMessage: null,
         version: { increment: 1 },
       },
     }),
@@ -592,6 +598,25 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
         addEvent(run.id, sequence, event.type, event.message, event.payload, event.level ?? "INFO"),
     );
     if (output.result.status !== "SUCCEEDED") {
+      await prisma.codexRun.update({
+        where: { id: run.id },
+        data: {
+          exitCode: output.exitCode,
+          resultJson: output.result,
+          finalMessage: output.finalMessage,
+          errorCode: `CODEX_RESULT_${output.result.status}`,
+          errorMessage: output.result.summary.slice(0, 4000),
+          version: { increment: 1 },
+        },
+      });
+      await addEvent(
+        run.id,
+        sequence,
+        "run.result_failed",
+        `Codex returned a structured ${output.result.status} result: ${output.result.summary}`,
+        output.result,
+        "ERROR",
+      );
       throw new Error(
         `Codex가 작업을 완료하지 못했습니다: ${output.result.status} ${output.result.summary}`,
       );
@@ -826,6 +851,8 @@ const worker = new Worker<FactoryJobData, WorkerResult>(
         externalJobId: String(job.id),
         status: "RUNNING",
         startedAt: new Date(),
+        finishedAt: null,
+        lastError: null,
         attempts: { increment: 1 },
         version: { increment: 1 },
       },

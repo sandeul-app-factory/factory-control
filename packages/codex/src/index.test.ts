@@ -1,10 +1,27 @@
-import { describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PassThrough } from "node:stream";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FakeCodexAdapter,
+  RealCodexAdapter,
   buildCodexPrompt,
   codexEnvironment,
   prepareWindowsWorkspaceAcl,
 } from "./index.js";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
 
 describe("Codex execution contract", () => {
   it("renders authority, immutable rules, task, and locked PRD hash", () => {
@@ -77,6 +94,7 @@ describe("Codex execution contract", () => {
     });
     expect(calls).toHaveLength(4);
     expect(calls[0]?.args).toContain("FACTORY\\CodexSandboxUsers:(OI)(CI)(M)");
+    expect(calls.every(({ args }) => args.includes("/Q"))).toBe(true);
     expect(calls[3]?.args).toContain("FACTORY\\CodexSandboxUsers:(OI)(CI)(RX)");
     expect(calls[3]?.args[0]).toMatch(/repository[\\/]\.git$/);
   });
@@ -107,5 +125,62 @@ describe("Codex execution contract", () => {
     expect(environment.APPDATA).toContain("AppData");
     expect(environment.FACTORY_SECRET).toBeUndefined();
     expect(environment.GIT_TERMINAL_PROMPT).toBe("0");
+  });
+
+  it("recovers a validated result when Codex emits turn.completed but does not exit", async () => {
+    vi.stubEnv("CODEX_PERMISSION_PROFILE", ":workspace");
+    const directory = await mkdtemp(join(tmpdir(), "factory-codex-"));
+    temporaryDirectories.push(directory);
+    const outputPath = join(directory, "result.json");
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        status: "FAILED",
+        summary: "Release gate blocked",
+        changedFiles: [],
+        tests: [],
+        acceptanceCriteria: [],
+        assumptions: [],
+        questions: [],
+        incompleteItems: ["security findings remain"],
+        securityNotes: [],
+      }),
+      "utf8",
+    );
+    const child = Object.assign(new EventEmitter(), {
+      pid: 1234,
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(() => true),
+    });
+    const terminateProcessTree = vi.fn(() => Promise.resolve());
+    const adapter = new RealCodexAdapter({
+      spawnProcess: () => child as never,
+      terminateProcessTree,
+      terminalEventGraceMs: 5,
+    });
+    const onEvent = vi.fn(() => Promise.resolve());
+    const execution = adapter.execute(
+      {
+        prompt: "prompt",
+        workspacePath: directory,
+        outputSchemaPath: join(directory, "schema.json"),
+        outputPath,
+        acceptanceCriteria: [],
+        signal: new AbortController().signal,
+      },
+      onEvent,
+    );
+    child.stdout.write(`${JSON.stringify({ type: "turn.completed" })}\n`);
+
+    await expect(execution).resolves.toMatchObject({
+      exitCode: 0,
+      result: { status: "FAILED", summary: "Release gate blocked" },
+    });
+    expect(terminateProcessTree).toHaveBeenCalledOnce();
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "codex.process_recovered", level: "WARN" }),
+    );
   });
 });
