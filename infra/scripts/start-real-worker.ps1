@@ -83,11 +83,21 @@ $redisPort = if ($env:REDIS_BIND_PORT) { $env:REDIS_BIND_PORT } else { "6379" }
 $minioPort = if ($env:MINIO_API_PORT) { $env:MINIO_API_PORT } else { "9000" }
 $env:DATABASE_URL = if ($env:CODEX_HOST_DATABASE_URL) {
   $env:CODEX_HOST_DATABASE_URL
+} elseif ($env:POSTGRES_PASSWORD) {
+  $postgresUser = if ($env:POSTGRES_USER) { $env:POSTGRES_USER } else { "factory" }
+  $postgresDatabase = if ($env:POSTGRES_DB) { $env:POSTGRES_DB } else { "factory" }
+  $encodedPostgresUser = [System.Uri]::EscapeDataString($postgresUser)
+  $encodedPostgresPassword = [System.Uri]::EscapeDataString($env:POSTGRES_PASSWORD)
+  $encodedPostgresDatabase = [System.Uri]::EscapeDataString($postgresDatabase)
+  "postgresql://${encodedPostgresUser}:${encodedPostgresPassword}@127.0.0.1:$postgresPort/${encodedPostgresDatabase}?schema=public"
 } else {
   $env:DATABASE_URL -replace '@postgres:[0-9]+', "@127.0.0.1:$postgresPort"
 }
 $env:REDIS_URL = if ($env:CODEX_HOST_REDIS_URL) {
   $env:CODEX_HOST_REDIS_URL
+} elseif ($env:REDIS_PASSWORD) {
+  $encodedRedisPassword = [System.Uri]::EscapeDataString($env:REDIS_PASSWORD)
+  "redis://:${encodedRedisPassword}@127.0.0.1:$redisPort"
 } else {
   $env:REDIS_URL -replace '@redis:[0-9]+', "@127.0.0.1:$redisPort" -replace 'redis://redis:[0-9]+', "redis://127.0.0.1:$redisPort"
 }
