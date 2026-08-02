@@ -36,6 +36,7 @@ export class ArtifactsService {
     file: Express.Multer.File,
     actor: RequestAuth,
     request: FactoryRequest,
+    description?: string,
   ) {
     const maxBytes = Number(process.env.MAX_UPLOAD_BYTES ?? 52_428_800);
     const upload = await validateUpload(file.buffer, file.originalname, file.mimetype, maxBytes);
@@ -51,6 +52,7 @@ export class ArtifactsService {
         kind,
         logicalFolder,
         name: upload.originalName,
+        description: description?.trim() || null,
         createdBy: actor.userId,
         versions: {
           create: {
@@ -82,6 +84,7 @@ export class ArtifactsService {
         sha256: upload.sha256,
         sizeBytes: upload.sizeBytes,
         mimeType: upload.mimeType,
+        hasDescription: Boolean(description?.trim()),
       },
     });
     return artifact;

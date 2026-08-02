@@ -501,6 +501,11 @@ export class QualityService {
     actor: RequestAuth,
     request: FactoryRequest,
   ) {
+    if ((process.env.APPROVAL_WORKFLOW_ENABLED ?? "false").toLowerCase() !== "true") {
+      throw new ConflictException(
+        "승인 절차는 비활성화되었습니다. Release Gate 결과와 빌드 Artifact를 개발 작업에서 확인하세요.",
+      );
+    }
     const release = await prisma.release.findFirst({
       where: { id: releaseId, deletedAt: null },
     });

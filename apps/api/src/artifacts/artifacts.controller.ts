@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Param,
@@ -30,6 +31,7 @@ export class ArtifactsController {
     @Param("kind") rawKind: string,
     @Param("logicalFolder") rawFolder: string,
     @UploadedFile() file: Express.Multer.File | undefined,
+    @Body("description") rawDescription: string | undefined,
     @CurrentAuth() actor: RequestAuth,
     @CurrentRequest() request: FactoryRequest,
   ) {
@@ -38,7 +40,19 @@ export class ArtifactsController {
     if (!kind.success || !folder.success || !file) {
       throw new BadRequestException("파일, 종류 또는 논리 폴더가 올바르지 않습니다.");
     }
-    return this.artifacts.store(projectId, kind.data, folder.data, file, actor, request);
+    const description = rawDescription?.trim();
+    if (description && description.length > 4000) {
+      throw new BadRequestException("설명은 4,000자 이하여야 합니다.");
+    }
+    return this.artifacts.store(
+      projectId,
+      kind.data,
+      folder.data,
+      file,
+      actor,
+      request,
+      description,
+    );
   }
 
   @Get("artifact-versions/:artifactVersionId/download")

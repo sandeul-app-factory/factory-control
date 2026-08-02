@@ -61,6 +61,7 @@ export interface Artifact {
   kind: string;
   logicalFolder: string;
   name: string;
+  description?: string | null;
   status: string;
   updatedAt: string;
   versions: Array<{
@@ -158,6 +159,12 @@ export interface DevelopmentTaskDetail extends DevelopmentTask {
     maxAttempts: number;
     lastError?: string | null;
   } | null;
+  pipeline: {
+    testRun?: TestRun | null;
+    securityScan?: SecurityScan | null;
+    build?: FactoryBuild | null;
+    release?: FactoryRelease | null;
+  };
 }
 
 export interface TestRun {
@@ -250,6 +257,7 @@ export interface FactorySettings {
   githubAdapter: string;
   codexAdapter: string;
   codexConcurrency: number;
+  prdApprovalEnabled: boolean;
   mcpEnabled: boolean;
   mcpWriteEnabled: boolean;
   mcpCredentialCount: number;

@@ -70,6 +70,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile
+      target: runtime
       args:
         FILTER: "@sandeul/database"
     command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
@@ -84,6 +85,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile
+      target: runtime
       args:
         FILTER: "@sandeul/api"
     environment:
@@ -106,6 +108,8 @@ services:
       GITHUB_ADAPTER: ${GITHUB_ADAPTER:-fake}
       CODEX_ADAPTER: ${CODEX_ADAPTER:-fake}
       MCP_ENABLED: ${MCP_ENABLED:-false}
+      PRD_APPROVAL_ENABLED: ${PRD_APPROVAL_ENABLED:-false}
+      APPROVAL_WORKFLOW_ENABLED: ${APPROVAL_WORKFLOW_ENABLED:-false}
       MCP_WRITE_ENABLED: ${MCP_WRITE_ENABLED:-false}
       MCP_TOKEN_PEPPER: ${MCP_TOKEN_PEPPER:-}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-http://localhost:3000}
@@ -136,6 +140,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile
+      target: runtime
       args:
         FILTER: "@sandeul/web"
     environment:
@@ -170,6 +175,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile
+      target: runtime
       args:
         FILTER: "@sandeul/worker"
     environment:

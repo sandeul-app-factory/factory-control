@@ -183,7 +183,7 @@ async function openProject(page: Page, projectName: string) {
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 }
 
-test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 통제한다", async ({ page }) => {
+test("PRD·디자인·Repository부터 Codex 검증·빌드까지 실행한다", async ({ page }) => {
   const loginId = process.env.E2E_ADMIN_LOGIN_ID;
   const password = process.env.E2E_ADMIN_PASSWORD;
   test.skip(!loginId || !password, "E2E_ADMIN_LOGIN_ID와 E2E_ADMIN_PASSWORD가 필요합니다.");
@@ -204,7 +204,7 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
   const projectDialog = page.getByRole("dialog", { name: "새 프로젝트 만들기" });
   await projectDialog.getByLabel("프로젝트 이름").fill(projectName);
   await projectDialog.getByLabel("식별자").fill(slug);
-  await projectDialog.getByLabel("프로젝트 요약").fill("Factory v2 전체 인수 E2E");
+  await projectDialog.getByLabel("프로젝트 요약").fill("Factory v2 통합 인수 E2E");
   await projectDialog.getByRole("button", { name: "프로젝트 생성" }).click();
   await expect(page.getByText(projectName, { exact: true })).toBeVisible();
 
@@ -212,12 +212,10 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
   const project = projects.find((item) => item.slug === slug);
   expect(project).toBeDefined();
 
-  const guide = await request.get("/templates/SANDEUL_ANDROID_PRD_GUIDE.md");
-  expect(guide.ok()).toBe(true);
-  expect(await guide.text()).toContain("ChatGPT Plus");
-  const schema = await api<{
-    properties: { schemaVersion: { const: string } };
-  }>(request, "/prd-authoring/schema");
+  const schema = await api<{ properties: { schemaVersion: { const: string } } }>(
+    request,
+    "/prd-authoring/schema",
+  );
   expect(schema.properties.schemaVersion.const).toBe("android-build-ready/v1");
 
   const prd1 = await uploadPrd(
@@ -226,18 +224,9 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
     project!.id,
     "prd-v1.md",
     buildReadyMarkdown("초기 요구사항"),
-    true,
   );
-  expect(prd1.status).toBe("IN_REVIEW");
+  expect(prd1.status).toBe("LOCKED");
 
-  await api(request, `/projects/${project!.id}/prd-comments`, {
-    ...mutation(auth.csrfToken, {
-      prdVersionId: prd1.id,
-      body: "승인 전에 보안 제약을 명시해야 합니다.",
-      anchorStart: 0,
-      anchorEnd: 12,
-    }),
-  });
   await api(request, `/projects/${project!.id}/constraints`, {
     ...mutation(auth.csrfToken, {
       title: "Signing key 격리",
@@ -246,7 +235,7 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
       priority: "CRITICAL",
       mandatory: true,
       appliesPrdVersionId: prd1.id,
-      reason: "빌드 실행 조직과 서명 권한을 분리하기 위해서입니다.",
+      reason: "빌드 실행 조직과 서명 권한을 분리합니다.",
     }),
   });
   await api(request, `/projects/${project!.id}/decisions`, {
@@ -258,18 +247,7 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
       priority: "HIGH",
       mandatory: true,
       appliesPrdVersionId: prd1.id,
-      reason: "실패를 성공으로 표시하지 않기 위해서입니다.",
-    }),
-  });
-  await api(request, `/prd-versions/${prd1.id}/approvals`, {
-    ...mutation(auth.csrfToken, {
-      action: "CONDITIONAL_APPROVE",
-      title: "보안 제약 반영 조건부 승인",
-      detail: "Signing 분리와 Release Gate를 PRD에 반영합니다.",
-      scope: "전체 PRD",
-      priority: "HIGH",
-      mandatory: true,
-      reason: "수정 버전 검토가 필요합니다.",
+      reason: "실패를 성공으로 표시하지 않습니다.",
     }),
   });
 
@@ -279,36 +257,39 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
     project!.id,
     "prd-v2.md",
     buildReadyMarkdown("보안 제약과 Release Gate가 반영된 최종 요구사항"),
-    true,
   );
   expect(prd2.versionNumber).toBe(prd1.versionNumber + 1);
-  expect(prd2.status).toBe("IN_REVIEW");
-  await api(request, `/prd-versions/${prd2.id}/approvals`, {
-    ...mutation(auth.csrfToken, {
-      action: "APPROVE",
-      title: "최종 PRD 승인",
-      detail: "조건이 모두 반영되었습니다.",
-      scope: "전체 PRD",
-      priority: "CRITICAL",
-      mandatory: true,
-      reason: "개발 기준으로 확정합니다.",
-    }),
-  });
-  await api(request, `/prd-versions/${prd2.id}/lock`, mutation(auth.csrfToken));
+  expect(prd2.status).toBe("LOCKED");
 
   const diff = await api<JsonRecord>(request, `/prd-versions/${prd1.id}/diff/${prd2.id}`);
   expect(diff).toBeTruthy();
 
+  await api(request, `/projects/${project!.id}/artifacts/UX/03%20UX`, {
+    method: "POST",
+    headers: { "x-csrf-token": auth.csrfToken },
+    multipart: {
+      file: {
+        name: "home.png",
+        mimeType: "image/png",
+        buffer: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      },
+      description: "홈 화면 Figma 내보내기 · 메인 버튼은 메모 작성 화면으로 이동",
+    },
+  });
+
   await openProject(page, projectName);
   const main = page.locator("main");
-  await main.getByRole("button", { name: "PRD", exact: true }).click();
-  await expect(main.getByText("수동 PRD 워크플로우", { exact: true })).toBeVisible();
+  await expect(main.getByText("PRD 준비", { exact: true })).toBeVisible();
   await expect(main.getByRole("link", { name: "작성 가이드" })).toHaveAttribute(
     "href",
     "/templates/SANDEUL_ANDROID_PRD_GUIDE.md",
   );
   await expect(main.getByText("PRD v2", { exact: true })).toBeVisible();
   await expect(main.getByText("LOCKED", { exact: true }).first()).toBeVisible();
+  await expect(main.getByText("홈 화면 Figma 내보내기", { exact: false })).toBeVisible();
 
   const repository = await api<{
     id: string;
@@ -338,13 +319,17 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
   expect(completedRun?.pullRequestUrl).toContain("github.com");
   const commitSha = completedRun!.commitSha!;
 
-  await openProject(page, projectName);
-  await main.getByRole("button", { name: "개발 작업", exact: true }).click();
-  await expect(main.getByRole("heading", { name: "실행 로그" })).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "주 메뉴" })
+    .getByRole("button", { name: "개발 작업" })
+    .click();
+  await expect(main.getByRole("heading", { name: "진행 요약" })).toBeVisible();
   await expect(main.getByRole("link", { name: /Pull Request #\d+ 열기/ })).toBeVisible();
-  await main.getByRole("button", { name: "코드 변경", exact: true }).click();
-  await expect(main.getByRole("heading", { name: "Git diff" })).toBeVisible();
-  await expect(main.getByText("FakeCodexAdapter E2E artifact")).toBeVisible();
+  await expect(main.getByRole("heading", { name: "변경 요약" })).toBeVisible();
+  await expect(
+    main.getByText("app/src/main/java/work/sandeul/factory/FakeFeature.kt"),
+  ).toBeVisible();
+  await expect(main.getByText("Release Candidate", { exact: true })).toBeVisible();
 
   const [testRuns, scans, builds, releases, artifacts] = await Promise.all([
     api<Array<{ id: string; commitSha: string; status: string }>>(
@@ -362,21 +347,9 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
   expect(testRuns.find((run) => run.commitSha === commitSha)?.status).toBe("PASSED");
   expect(scans.find((scan) => scan.commitSha === commitSha)?.status).toBe("PASSED");
   expect(builds.find((build) => build.commitSha === commitSha)?.status).toBe("SUCCEEDED");
-  const release = releases.find((item) => item.commitSha === commitSha)!;
-  expect(release.status).toBe("CANDIDATE");
+  expect(releases.find((release) => release.commitSha === commitSha)?.status).toBe("CANDIDATE");
   const apk = artifacts.find((artifact) => artifact.kind === "APK")!;
   expect(apk).toBeDefined();
-
-  await openProject(page, projectName);
-  await main.getByRole("button", { name: "테스트", exact: true }).click();
-  await expect(main.getByText("Acceptance Criteria: 충족")).toBeVisible();
-  await main.getByRole("button", { name: "보안", exact: true }).click();
-  await expect(main.getByText("FACTORY_ANDROID_PIPELINE")).toBeVisible();
-  await main.getByRole("button", { name: "빌드", exact: true }).click();
-  await expect(main.getByText("CANDIDATE", { exact: true })).toBeVisible();
-  await main.getByPlaceholder("최종 승인 사유").fill("E2E 검증 결과 Release Candidate 승인");
-  await main.getByRole("button", { name: "Release Candidate 승인" }).click();
-  await expect(main.getByText("APPROVED", { exact: true })).toBeVisible();
 
   const download = await api<{ url: string }>(
     request,
@@ -384,22 +357,18 @@ test("CEO가 PRD부터 Release Candidate 승인까지 공장 전체 흐름을 �
   );
   const downloaded = await request.get(download.url);
   expect(downloaded.ok()).toBeTruthy();
-  expect(await downloaded.body()).toEqual(
-    Buffer.from("UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==", "base64"),
-  );
 
   const finalProject = await api<Project>(request, `/projects/${project!.id}`);
-  expect(finalProject.status).toBe("FINAL_APPROVAL");
+  expect(finalProject.status).toBe("RELEASE_CANDIDATE");
   const audits = await api<{ items: Array<{ action: string }> }>(request, "/audit-logs");
-  expect(audits.items.some((entry) => entry.action === "RELEASE_APPROVE")).toBe(true);
+  expect(audits.items.some((entry) => entry.action === "PRD_AUTO_LOCK")).toBe(true);
   expect(audits.items.some((entry) => entry.action === "FILE_DOWNLOAD")).toBe(true);
 
   const navigation = page.getByRole("navigation", { name: "주 메뉴" });
   await navigation.getByRole("button", { name: "감사 로그" }).click();
   await expect(page.getByRole("heading", { name: "감사 로그" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: "RELEASE_APPROVE" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "PRD_AUTO_LOCK" }).first()).toBeVisible();
   await navigation.getByRole("button", { name: "설정" }).click();
   await expect(page.getByRole("heading", { name: "설정" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "MCP Credential" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Session 강제 종료" })).toBeVisible();
 });

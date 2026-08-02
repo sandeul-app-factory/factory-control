@@ -71,12 +71,20 @@ export class TasksService implements OnModuleDestroy {
     });
   }
 
+  listAll() {
+    return prisma.developmentTask.findMany({
+      where: { deletedAt: null },
+      orderBy: { updatedAt: "desc" },
+      take: 200,
+    });
+  }
+
   async get(taskId: string) {
     const task = await prisma.developmentTask.findFirst({
       where: { id: taskId, deletedAt: null },
     });
     if (!task) throw new NotFoundException("개발 작업을 찾을 수 없습니다.");
-    const [instructions, runs, job, repository] = await Promise.all([
+    const [instructions, runs, job, repository, testRun, securityScan, build] = await Promise.all([
       prisma.taskInstructionVersion.findMany({
         where: { developmentTaskId: taskId },
         orderBy: { versionNumber: "desc" },
@@ -92,16 +100,53 @@ export class TasksService implements OnModuleDestroy {
       task.targetRepositoryId
         ? prisma.githubRepository.findUnique({ where: { id: task.targetRepositoryId } })
         : null,
+      prisma.testRun.findFirst({
+        where: { developmentTaskId: taskId },
+        orderBy: { createdAt: "desc" },
+        include: { results: true },
+      }),
+      prisma.securityScan.findFirst({
+        where: { developmentTaskId: taskId },
+        orderBy: { createdAt: "desc" },
+        include: { findings: true },
+      }),
+      prisma.build.findFirst({
+        where: { developmentTaskId: taskId },
+        orderBy: { createdAt: "desc" },
+      }),
     ]);
     const runIds = runs.map((run) => run.id);
     const events = runIds.length
       ? await prisma.codexRunEvent.findMany({
           where: { codexRunId: { in: runIds } },
+          select: {
+            id: true,
+            codexRunId: true,
+            sequence: true,
+            eventType: true,
+            level: true,
+            message: true,
+            createdAt: true,
+          },
           orderBy: [{ codexRunId: "asc" }, { sequence: "asc" }],
           take: 1000,
         })
       : [];
-    return { ...task, instructions, runs, events, job, repository };
+    const release = build
+      ? await prisma.release.findFirst({
+          where: { buildId: build.id, deletedAt: null },
+          orderBy: { createdAt: "desc" },
+        })
+      : null;
+    return {
+      ...task,
+      instructions,
+      runs,
+      events,
+      job,
+      repository,
+      pipeline: { testRun, securityScan, build, release },
+    };
   }
 
   async create(projectId: string, body: unknown, actor: RequestAuth, request: FactoryRequest) {
@@ -122,7 +167,7 @@ export class TasksService implements OnModuleDestroy {
     if (!project) throw new NotFoundException("프로젝트를 찾을 수 없습니다.");
     if (!taskReadyStatuses.has(project.status)) {
       throw new ConflictException(
-        "Repository 준비 이후의 승인된 단계에서만 작업을 만들 수 있습니다.",
+        "Repository 준비 이후의 개발 단계에서만 작업을 만들 수 있습니다.",
       );
     }
     const lockedPrd = await prisma.prdVersion.findFirst({
@@ -258,7 +303,7 @@ export class TasksService implements OnModuleDestroy {
         type: "IMPLEMENT_PRD",
         title: `${project.name} v${lockedPrd.versionNumber} 개발`,
         instruction:
-          "잠긴 PRD 전체 범위와 Acceptance Criteria를 구현합니다. 요구사항을 임의 확장하지 말고, 개발 완료 후 독립 테스트·보안검사·Release Candidate 빌드 단계가 실행될 수 있는 상태로 보고합니다.",
+          "잠긴 PRD 전체 범위와 Acceptance Criteria를 구현합니다. 요구사항을 임의 확장하지 말고, 개발 완료 후 독립 테스트·보안검사·Release Candidate 빌드까지 실행 가능한 상태로 보고합니다.",
         acceptanceCriteria,
         targetRepositoryId: repository.id,
         targetBranch: repository.defaultBranch,
@@ -284,8 +329,8 @@ export class TasksService implements OnModuleDestroy {
       throw new ConflictException("실행할 TaskInstructionVersion이 없습니다.");
     }
     const project = await prisma.project.findUniqueOrThrow({ where: { id: task.projectId } });
-    if (project.status !== "REPO_READY") {
-      throw new ConflictException("Repository 준비가 완료된 프로젝트만 개발을 시작할 수 있습니다.");
+    if (!taskReadyStatuses.has(project.status)) {
+      throw new ConflictException("Repository가 준비된 개발 단계에서만 작업을 시작할 수 있습니다.");
     }
     const created = await prisma.$transaction(async (transaction) => {
       const claimed = await transaction.developmentTask.updateMany({
@@ -307,7 +352,7 @@ export class TasksService implements OnModuleDestroy {
           codexRunId: run.id,
           sequence: 1,
           eventType: "run.queued",
-          message: "CEO 시작 승인으로 Codex 작업이 대기열에 등록되었습니다.",
+          message: "사용자가 개발 시작을 요청해 Codex 작업이 대기열에 등록되었습니다.",
         },
       });
       const job = await transaction.job.create({
@@ -325,7 +370,7 @@ export class TasksService implements OnModuleDestroy {
     await this.projects.transitionSystem(
       task.projectId,
       "DEVELOPMENT_QUEUED",
-      `CEO가 개발 시작: ${task.title}`,
+      `개발 시작: ${task.title}`,
       actor,
       request,
       { taskId: task.id },
@@ -529,6 +574,15 @@ export class TasksService implements OnModuleDestroy {
   events(codexRunId: string, afterSequence: number) {
     return prisma.codexRunEvent.findMany({
       where: { codexRunId, sequence: { gt: afterSequence } },
+      select: {
+        id: true,
+        codexRunId: true,
+        sequence: true,
+        eventType: true,
+        level: true,
+        message: true,
+        createdAt: true,
+      },
       orderBy: { sequence: "asc" },
       take: 200,
     });

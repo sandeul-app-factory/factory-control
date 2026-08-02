@@ -15,6 +15,10 @@ function objectStorage(): S3ObjectStorage {
   });
 }
 
+export function readArtifactObject(objectKey: string): Promise<Buffer> {
+  return objectStorage().get(objectKey);
+}
+
 export async function storePipelineArtifact(input: {
   projectId: string;
   actorId: string;

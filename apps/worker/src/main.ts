@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { Worker } from "bullmq";
 import { Redis } from "ioredis";
@@ -8,7 +8,7 @@ import { createGithubAdapter } from "@sandeul/github";
 import { assertProjectTransition } from "@sandeul/contracts";
 import type { ProjectStatus } from "@sandeul/contracts";
 import { evaluateReleaseGate, sha256 } from "@sandeul/security";
-import { storePipelineArtifact } from "./artifact-writer.js";
+import { readArtifactObject, storePipelineArtifact } from "./artifact-writer.js";
 import {
   runAndroidPipeline,
   type AndroidPipelineResult,
@@ -422,7 +422,7 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
   ) {
     throw new Error("잠긴 PRD Hash 또는 현재 지시 버전 검증에 실패했습니다.");
   }
-  const [constraintVersions, decisionVersions, lastEvent] = await Promise.all([
+  const [constraintVersions, decisionVersions, designArtifacts, lastEvent] = await Promise.all([
     prisma.ceoConstraint.findMany({
       where: { projectId: project.id, status: "ACTIVE", deletedAt: null },
       orderBy: [{ logicalId: "asc" }, { versionNumber: "desc" }],
@@ -430,6 +430,18 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
     prisma.decisionRecord.findMany({
       where: { projectId: project.id, status: "ACTIVE", deletedAt: null },
       orderBy: [{ logicalId: "asc" }, { versionNumber: "desc" }],
+    }),
+    prisma.artifact.findMany({
+      where: {
+        projectId: project.id,
+        kind: "UX",
+        logicalFolder: "03 UX",
+        status: "ACTIVE",
+        deletedAt: null,
+      },
+      include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+      orderBy: { updatedAt: "desc" },
+      take: 30,
     }),
     prisma.codexRunEvent.aggregate({
       where: { codexRunId: run.id },
@@ -499,6 +511,42 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
     .split(",")
     .map((command) => command.trim())
     .filter(Boolean);
+  const designDirectory = join(repositoryPath, ".factory-input", "designs");
+  await mkdir(designDirectory, { recursive: true, mode: 0o700 });
+  const designs = [] as Array<{
+    name: string;
+    description: string;
+    sha256: string;
+    localPath: string;
+  }>;
+  for (const artifact of designArtifacts) {
+    const version = artifact.versions[0];
+    if (!version) continue;
+    const buffer = await readArtifactObject(version.objectKey);
+    if (sha256(buffer) !== version.sha256) {
+      throw new Error(`디자인 Artifact SHA-256 검증에 실패했습니다: ${artifact.id}`);
+    }
+    const localName = `${artifact.id}-${version.originalName}`;
+    await writeFile(join(designDirectory, localName), buffer, { mode: 0o600 });
+    designs.push({
+      name: artifact.name,
+      description: artifact.description ?? "",
+      sha256: version.sha256,
+      localPath: `.factory-input/designs/${localName}`,
+    });
+  }
+  await writeFile(
+    join(designDirectory, "manifest.json"),
+    JSON.stringify({ generatedAt: new Date().toISOString(), designs }, null, 2),
+    { encoding: "utf8", mode: 0o600 },
+  );
+  if (!fake) {
+    await appendFile(
+      join(repositoryPath, ".git", "info", "exclude"),
+      "\n.factory-input/\n",
+      "utf8",
+    );
+  }
   const prompt = buildCodexPrompt({
     project: { id: project.id, name: project.name, summary: project.summary },
     lockedPrd: {
@@ -510,6 +558,7 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
     },
     constraints,
     decisions,
+    designs,
     task: {
       id: task.id,
       type: task.type,
@@ -524,7 +573,7 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
       ...(task.targetCommitSha ? { targetCommitSha: task.targetCommitSha } : {}),
     },
     allowedPaths: jsonStringArray(task.allowedPaths),
-    deniedPaths: jsonStringArray(task.deniedPaths),
+    deniedPaths: [...jsonStringArray(task.deniedPaths), ".factory-input/**"],
     testCommands,
   });
   await prisma.$transaction([

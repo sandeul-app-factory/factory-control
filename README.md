@@ -2,13 +2,13 @@
 
 Android 앱 제작 공장의 중앙 Control Plane이다. ChatGPT Plus에서 사용자와 기획을
 완성하고 내려받은 Build-ready PRD를 사용자가 Factory 웹에 직접 업로드한다. Factory는
-서버 검증·CEO 승인·잠금·개발·테스트·보안·릴리스를 통제한다. Factory 백엔드는
+서버 검증·자동 잠금·디자인·개발·테스트·보안·릴리스를 통제한다. Factory 백엔드는
 OpenAI API를 호출하지 않는다.
 
 ## 구현 범위
 
-- 한국어 CEO Control Center: 프로젝트, PRD 버전·diff·코멘트·승인·잠금, 제약사항,
-  Decision Record, 작업 로그, Git diff/PR, 테스트, 보안 Finding, 빌드, 감사 로그, 설정
+- 한국어 Control Center: 프로젝트에서 PRD·Figma 내보내기·Repository를 준비하고,
+  개발 작업에서 Codex·테스트·보안·빌드 상태와 요약을 통합 확인
 - NestJS REST/OpenAPI API: Argon2id 인증, opaque session, CSRF, RBAC, 상태 머신,
   optimistic locking, 감사
 - PostgreSQL/Prisma metadata, Redis/BullMQ 작업, MinIO/S3 artifact
@@ -88,14 +88,16 @@ pnpm security:full
 ## 운영
 
 운영 Compose에는 Web, API, PostgreSQL, Redis, MinIO, migration, loopback Nginx
-gateway가 포함된다. Real Codex Worker는 전용 OS 사용자와 systemd로 호스트에서
-실행한다. Cloudflare Tunnel은 gateway의 `127.0.0.1:8080`에만 연결한다.
+gateway가 포함된다. Real Codex Worker는 전용 OS 사용자/systemd 또는
+macOS Docker Worker profile로 격리해 실행한다. Cloudflare Tunnel은 gateway의
+`127.0.0.1:8080`에만 연결한다.
 
 - [운영 배포](docs/operations/deployment.md)
 - [CEO 사용설명서](docs/operations/factory-user-guide.md)
 - [Secret 설정](docs/operations/secrets.md)
 - [Cloudflare 연결](docs/operations/cloudflare.md)
 - [Codex Worker](docs/operations/codex-worker.md)
+- [macOS Docker 운영](docs/operations/macos-docker.md)
 - [백업과 복구](docs/operations/backup-restore.md)
 - [MCP endpoint](docs/api/mcp.md)
 - [아키텍처](docs/architecture/overview.md)

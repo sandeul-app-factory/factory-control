@@ -3,15 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Card, Modal, cn } from "@sandeul/ui";
 import {
-  Activity,
   Archive,
   Blocks,
   BookOpenCheck,
-  Boxes,
   Building2,
   CheckCircle2,
   ChevronRight,
-  ClipboardCheck,
   Code2,
   Download,
   FileCheck2,
@@ -27,11 +24,8 @@ import {
   LogOut,
   Menu,
   Plus,
-  RefreshCw,
   Search,
   Settings,
-  ShieldCheck,
-  TestTube2,
   TerminalSquare,
   Upload,
   X,
@@ -46,42 +40,18 @@ import type {
   DecisionRecord,
   DevelopmentTask,
   DevelopmentTaskDetail,
-  FactoryBuild,
-  FactoryRelease,
   FactorySettings,
   McpCredential,
   PrdVersion,
   Project,
-  SecurityScan,
-  TestRun,
 } from "../lib/types";
 
 const primaryNav = [
   ["dashboard", "대시보드", Gauge],
   ["projects", "프로젝트", FolderKanban],
-  ["approvals", "승인 대기", ClipboardCheck],
   ["tasks", "개발 작업", Code2],
-  ["tests", "테스트", TestTube2],
-  ["security", "보안검사", ShieldCheck],
-  ["builds", "빌드", Boxes],
-  ["files", "파일", Files],
   ["audit", "감사 로그", History],
   ["settings", "설정", Settings],
-] as const;
-
-const projectTabs = [
-  "개요",
-  "시장조사",
-  "PRD",
-  "CEO 제약사항",
-  "의사결정 기록",
-  "개발 작업",
-  "코드 변경",
-  "테스트",
-  "보안",
-  "빌드",
-  "파일",
-  "활동 기록",
 ] as const;
 
 function formatSeoul(value: string): string {
@@ -103,6 +73,77 @@ function statusTone(status: string): "neutral" | "success" | "warning" | "danger
   if (/REVIEW|QUEUED|DRAFT|REQUIRED|HOLD/.test(status)) return "warning";
   if (/DEVELOP|RUNNING|TESTING|SECURITY/.test(status)) return "info";
   return "neutral";
+}
+
+function displayStatus(status?: string | null): string {
+  if (!status) return "대기";
+  const labels: Record<string, string> = {
+    DRAFT: "시작 대기",
+    QUEUED: "실행 대기",
+    STARTING: "시작 중",
+    RUNNING: "진행 중",
+    CANCEL_REQUESTED: "중단 처리 중",
+    CANCELLED: "중단됨",
+    SUCCEEDED: "완료",
+    PASSED: "통과",
+    FAILED: "실패",
+    TIMED_OUT: "시간 초과",
+    DEAD_LETTER: "재시도 종료",
+    PENDING: "대기",
+    BUILDING: "빌드 중",
+    GATE_BLOCKED: "출시 차단",
+    CANDIDATE: "Release Candidate",
+    APPROVED: "출시 준비",
+    SIGNED: "서명 완료",
+    RELEASED: "출시 완료",
+    NOT_STARTED: "시작 전",
+  };
+  return labels[status] ?? status;
+}
+
+function displayTaskType(type: string): string {
+  const labels: Record<string, string> = {
+    REPO_BOOTSTRAP: "Repository 준비",
+    IMPLEMENT_PRD: "PRD 구현",
+    IMPLEMENT_FEATURE: "기능 추가",
+    FIX_REVIEW: "리뷰 수정",
+    FIX_TEST: "테스트 수정",
+    FIX_SECURITY: "보안 수정",
+    REFACTOR_APPROVED_SCOPE: "정의 범위 Refactor",
+    BUILD_RELEASE_CANDIDATE: "Release Candidate 빌드",
+    GENERATE_DOCUMENTATION: "문서 생성",
+  };
+  return labels[type] ?? type;
+}
+
+function taskProgressSummary(status: string, runStatus?: string | null): string {
+  const effective = runStatus ?? status;
+  const summaries: Record<string, string> = {
+    DRAFT: "PRD와 Repository가 준비되었습니다. 개발 시작을 누르면 Codex에 전달됩니다.",
+    QUEUED: "Codex Worker의 실행 순서를 기다리고 있습니다.",
+    STARTING: "Repository와 잠긴 PRD 해시를 검증하고 있습니다.",
+    RUNNING: "Codex가 구현하고 있습니다. 완료 후 테스트·보안검사·빌드 결과가 이어집니다.",
+    CANCELLING: "Codex 프로세스와 Queue 작업을 안전하게 중단하고 있습니다.",
+    CANCELLED: "사용자 요청으로 작업이 중단되었습니다.",
+    SUCCEEDED: "구현 작업이 완료되었습니다. 아래 검증·빌드 상태와 완료 요약을 확인하세요.",
+    FAILED: "작업이 완료되지 못했습니다. 완료 요약을 확인한 뒤 후속 지시로 재작업할 수 있습니다.",
+    TIMED_OUT: "제한 시간 내에 완료되지 않아 작업을 종료했습니다.",
+    DEAD_LETTER: "자동 재시도까지 실패했습니다. 원인을 수정한 뒤 후속 지시를 등록하세요.",
+  };
+  return summaries[effective] ?? "Factory가 작업 상태를 확인하고 있습니다.";
+}
+
+function runEventSummary(event: DevelopmentTaskDetail["events"][number]): string {
+  const raw = event.message.trim();
+  if (raw.startsWith("{") || raw.startsWith("[")) {
+    if (event.eventType === "thread.started") return "Codex 개발 세션을 시작했습니다.";
+    if (event.eventType === "turn.started") return "요구사항을 분석하고 구현을 시작했습니다.";
+    if (event.eventType === "turn.completed") return "Codex 구현 단계가 완료되었습니다.";
+    if (event.eventType === "item.started") return "Codex가 다음 개발 단계를 시작했습니다.";
+    if (event.eventType === "item.completed") return "Codex가 개발 단계 하나를 완료했습니다.";
+    return "Codex 작업 상태가 갱신되었습니다.";
+  }
+  return raw.length > 600 ? `${raw.slice(0, 600)}…` : raw;
 }
 
 function ErrorNotice({ error }: { error: unknown }) {
@@ -224,8 +265,10 @@ function Dashboard({
   onCreate: () => void;
   onOpen: (id: string) => void;
 }) {
-  const reviewing = projects.filter((project) =>
-    /REVIEW|APPROVAL|LOCK/.test(project.status),
+  const prepared = projects.filter((project) =>
+    /PRD_LOCKED|REPO_READY|DEVELOP|CODE_REVIEW|QA_TESTING|SECURITY_REVIEW|RELEASE|BUILT/.test(
+      project.status,
+    ),
   ).length;
   const developing = projects.filter((project) =>
     /DEVELOP|QUEUED|CODE_REVIEW/.test(project.status),
@@ -240,7 +283,7 @@ function Dashboard({
           <p className="text-sm font-medium text-emerald-300">CEO OVERVIEW</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">앱 제작 현황</h1>
           <p className="mt-2 text-sm text-zinc-500">
-            승인, 개발, 테스트와 출시 위험을 한곳에서 관리합니다.
+            PRD·디자인·Repository를 준비하고 개발 파이프라인을 한눈에 확인합니다.
           </p>
         </div>
         <Button onClick={onCreate}>
@@ -251,7 +294,7 @@ function Dashboard({
         {(
           [
             ["전체 프로젝트", projects.length, Building2, "text-zinc-200"],
-            ["검토·승인", reviewing, ClipboardCheck, "text-amber-300"],
+            ["개발 준비", prepared, FileCheck2, "text-amber-300"],
             ["개발 진행", developing, Code2, "text-sky-300"],
             ["출시 단계", release, CheckCircle2, "text-emerald-300"],
           ] as const
@@ -340,7 +383,7 @@ function UploadPrdModal({
       data.set("acceptanceCriteria", JSON.stringify(criteria));
       data.set("excludedScope", JSON.stringify(excluded));
       data.set("includedArtifactIds", "[]");
-      data.set("submitForReview", "true");
+      data.set("submitForReview", "false");
       return apiRequest<PrdVersion>(`/projects/${projectId}/prds`, {
         method: "POST",
         body: data,
@@ -359,8 +402,8 @@ function UploadPrdModal({
   return (
     <Modal
       open={open}
-      title="최종 Canonical PRD 제출"
-      description="ChatGPT에서 기획·수정을 끝낸 최종본을 직접 업로드합니다. 서버 검증을 통과하면 CEO 검토 대기로 제출됩니다."
+      title="Canonical PRD 업로드"
+      description="최종 PRD를 직접 업로드합니다. 서버 Schema와 파일 규칙을 통과하면 SHA-256을 기록하고 개발용 PRD로 자동 잠금합니다."
       onClose={onClose}
     >
       <form
@@ -399,113 +442,7 @@ function UploadPrdModal({
             취소
           </Button>
           <Button disabled={mutation.isPending} type="submit">
-            <Upload size={16} /> {mutation.isPending ? "검증·제출 중…" : "검증 후 CEO 검토로 제출"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function ApprovalModal({
-  open,
-  prd,
-  auth,
-  onClose,
-}: {
-  open: boolean;
-  prd: PrdVersion;
-  auth: AuthState;
-  onClose: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: (form: HTMLFormElement) => {
-      const data = new FormData(form);
-      return apiRequest(`/prd-versions/${prd.id}/approvals`, {
-        method: "POST",
-        csrfToken: auth.csrfToken,
-        body: JSON.stringify({
-          action: data.get("action"),
-          title: data.get("title"),
-          detail: data.get("detail"),
-          scope: data.get("scope"),
-          priority: data.get("priority"),
-          mandatory: data.get("mandatory") === "on",
-          reason: data.get("reason"),
-        }),
-      });
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["prds", prd.projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["prd", prd.id] }),
-        queryClient.invalidateQueries({ queryKey: ["project", prd.projectId] }),
-      ]);
-      onClose();
-    },
-  });
-  return (
-    <Modal
-      open={open}
-      title={`PRD v${prd.versionNumber} 승인 결정`}
-      description="결정의 범위와 사유는 영구 기록됩니다. 최종 승인을 선택하면 이 PRD 버전이 즉시 잠깁니다."
-      onClose={onClose}
-    >
-      <form
-        className="grid gap-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          mutation.mutate(event.currentTarget);
-        }}
-      >
-        <label className="grid gap-2 text-sm">
-          액션
-          <select className="factory-input" name="action" defaultValue="APPROVE">
-            <option value="APPROVE">최종 승인</option>
-            <option value="CONDITIONAL_APPROVE">조건부 승인</option>
-            <option value="REQUEST_REVISION">수정 요청</option>
-            <option value="REJECT">반려</option>
-            <option value="HOLD">보류</option>
-          </select>
-        </label>
-        <label className="grid gap-2 text-sm">
-          제목
-          <input className="factory-input" name="title" required />
-        </label>
-        <label className="grid gap-2 text-sm">
-          상세 내용
-          <textarea className="factory-input min-h-24 py-3" name="detail" required />
-        </label>
-        <label className="grid gap-2 text-sm">
-          적용 범위
-          <input className="factory-input" name="scope" defaultValue="전체 PRD" required />
-        </label>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-2 text-sm">
-            우선순위
-            <select className="factory-input" name="priority" defaultValue="HIGH">
-              <option>CRITICAL</option>
-              <option>HIGH</option>
-              <option>MEDIUM</option>
-              <option>LOW</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-2 self-end rounded-lg border border-zinc-700 px-3 py-3 text-sm">
-            <input type="checkbox" name="mandatory" defaultChecked /> 필수 결정
-          </label>
-        </div>
-        <label className="grid gap-2 text-sm">
-          사유
-          <textarea className="factory-input min-h-20 py-3" name="reason" required />
-        </label>
-        <ErrorNotice error={mutation.error} />
-        <div className="flex justify-end gap-2">
-          <Button className="!bg-zinc-800 !text-zinc-200" onClick={onClose}>
-            취소
-          </Button>
-          <Button disabled={mutation.isPending} type="submit">
-            결정 기록
+            <Upload size={16} /> {mutation.isPending ? "검증·저장 중…" : "검증 후 저장"}
           </Button>
         </div>
       </form>
@@ -516,7 +453,6 @@ function ApprovalModal({
 function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) {
   const queryClient = useQueryClient();
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [approvalOpen, setApprovalOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const versions = useQuery({
     queryKey: ["prds", project.id],
@@ -527,22 +463,6 @@ function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) 
     queryKey: ["prd", selected],
     queryFn: () => apiRequest<PrdVersion>(`/prd-versions/${selected}`),
     enabled: Boolean(selected),
-  });
-  const action = useMutation({
-    mutationFn: (kind: "review" | "lock") => {
-      if (!detail.data) throw new Error("PRD가 선택되지 않았습니다.");
-      return apiRequest(
-        `/prd-versions/${detail.data.id}/${kind === "review" ? "request-review" : "lock"}`,
-        { method: "POST", csrfToken: auth.csrfToken },
-      );
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["prds", project.id] }),
-        queryClient.invalidateQueries({ queryKey: ["prd", selected] }),
-        queryClient.invalidateQueries({ queryKey: ["project", project.id] }),
-      ]);
-    },
   });
   const comment = useMutation({
     mutationFn: (event: FormEvent<HTMLFormElement>) => {
@@ -569,15 +489,15 @@ function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) 
           <div className="max-w-3xl">
             <div className="flex items-center gap-2 text-emerald-300">
               <BookOpenCheck size={19} />
-              <p className="text-sm font-semibold">수동 PRD 워크플로우</p>
+              <p className="text-sm font-semibold">PRD 준비</p>
             </div>
             <h2 className="mt-2 text-lg font-semibold">
               ChatGPT Plus에서 기획을 완성한 뒤 최종본만 Factory에 제출하세요.
             </h2>
             <p className="mt-2 text-sm leading-6 text-zinc-500">
               가이드와 최신 JSON Schema를 ChatGPT 프로젝트에 첨부하고 반려·재기획을 마친 다음, 최종{" "}
-              <code>prd.json</code>을 업로드합니다. 업로드만으로 개발은 시작되지 않으며 CEO 최종
-              승인, PRD 잠금, Repository 준비와 개발 시작 버튼이 모두 필요합니다.
+              <code>prd.json</code>을 업로드합니다. 서버 검증을 통과한 버전은 자동 잠금되며,
+              Repository를 준비한 뒤 개발 작업 탭에서 Codex를 시작할 수 있습니다.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -601,8 +521,8 @@ function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) 
           {[
             ["1", "ChatGPT 기획", "가이드·Schema를 첨부하고 대화로 기획을 완성"],
             ["2", "직접 제출", "최종 prd.json을 Factory에 업로드"],
-            ["3", "CEO 확정", "서버 검증 후 승인·SHA-256 잠금"],
-            ["4", "개발 시작", "Repository 준비 후 Codex 작업을 수동 시작"],
+            ["3", "자동 확정", "Schema 검증·SHA-256 저장·PRD 잠금"],
+            ["4", "개발 시작", "Repository 준비 후 개발 작업 탭에서 시작"],
           ].map(([number, title, description]) => (
             <li className="flex gap-3" key={number}>
               <span className="grid size-7 shrink-0 place-items-center rounded-full bg-emerald-950 text-xs font-semibold text-emerald-300">
@@ -667,19 +587,6 @@ function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) 
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {detail.data.status === "DRAFT" || detail.data.status === "REVISION_REQUIRED" ? (
-                    <Button disabled={action.isPending} onClick={() => action.mutate("review")}>
-                      검토 요청
-                    </Button>
-                  ) : null}
-                  {detail.data.status === "IN_REVIEW" ? (
-                    <Button onClick={() => setApprovalOpen(true)}>승인 결정</Button>
-                  ) : null}
-                  {detail.data.status === "APPROVED" ? (
-                    <Button disabled={action.isPending} onClick={() => action.mutate("lock")}>
-                      <LockKeyhole size={16} /> 최종 잠금
-                    </Button>
-                  ) : null}
                   <Button
                     className="!bg-zinc-800 !text-zinc-200"
                     onClick={() => setUploadOpen(true)}
@@ -688,7 +595,6 @@ function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) 
                   </Button>
                 </div>
               </div>
-              <ErrorNotice error={action.error} />
             </Card>
             <Card className="overflow-hidden">
               <div className="border-b border-zinc-800 px-5 py-3 text-sm font-medium">
@@ -761,7 +667,7 @@ function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) 
           <EmptyState
             icon={<FileText size={20} />}
             title="최종 PRD를 직접 제출하세요"
-            description="ChatGPT Plus에서 검토와 재기획을 끝낸 Markdown 또는 구조화 JSON을 서버 검증 후 CEO 검토 대기로 등록합니다."
+            description="ChatGPT에서 검토와 재기획을 끝낸 Markdown 또는 구조화 JSON을 서버 검증 후 개발용 PRD로 저장합니다."
             action={
               <Button onClick={() => setUploadOpen(true)}>
                 <Upload size={16} /> PRD 업로드
@@ -776,14 +682,6 @@ function PrdWorkspace({ project, auth }: { project: Project; auth: AuthState }) 
         auth={auth}
         onClose={() => setUploadOpen(false)}
       />
-      {detail.data ? (
-        <ApprovalModal
-          open={approvalOpen}
-          prd={detail.data}
-          auth={auth}
-          onClose={() => setApprovalOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }
@@ -1007,6 +905,124 @@ function FilesPanel({ projectId, auth }: { projectId: string; auth: AuthState })
       title="저장된 파일이 없습니다"
       description="PRD와 조사 자료, 보고서, 빌드가 프로젝트·버전 기준 Object Storage에 보관됩니다."
     />
+  );
+}
+
+function DesignPanel({ projectId, auth }: { projectId: string; auth: AuthState }) {
+  const queryClient = useQueryClient();
+  const artifacts = useQuery({
+    queryKey: ["artifacts", projectId],
+    queryFn: () => apiRequest<Artifact[]>(`/projects/${projectId}/artifacts`),
+  });
+  const designs = (artifacts.data ?? []).filter(
+    (artifact) => artifact.kind === "UX" && artifact.logicalFolder === "03 UX",
+  );
+  const upload = useMutation({
+    mutationFn: (form: HTMLFormElement) =>
+      apiRequest<Artifact>(`/projects/${projectId}/artifacts/UX/03%20UX`, {
+        method: "POST",
+        csrfToken: auth.csrfToken,
+        body: new FormData(form),
+      }),
+    onSuccess: async (_artifact, form) => {
+      form.reset();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["artifacts", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
+      ]);
+    },
+  });
+  const download = useMutation({
+    mutationFn: (versionId: string) =>
+      apiRequest<{ url: string }>(`/artifact-versions/${versionId}/download`),
+    onSuccess: ({ url }) => window.location.assign(url),
+  });
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(300px,420px)_1fr]">
+      <Card className="h-fit p-5">
+        <div className="flex items-center gap-2">
+          <Upload className="text-emerald-300" size={18} />
+          <h2 className="font-semibold">Figma 디자인 도안</h2>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-zinc-500">
+          Figma에서 내보낸 PNG, JPG, WebP 또는 PDF를 업로드하세요. 화면 의도, 상호작용, 상태별
+          차이는 설명에 기록하면 Codex 작업 자료로 함께 보관됩니다.
+        </p>
+        <form
+          className="mt-5 grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            upload.mutate(event.currentTarget);
+          }}
+        >
+          <label className="grid gap-2 text-sm">
+            디자인 파일
+            <input
+              className="factory-input file:mr-3 file:rounded-md file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-zinc-200"
+              name="file"
+              type="file"
+              accept=".png,.jpg,.jpeg,.webp,.pdf,image/png,image/jpeg,image/webp,application/pdf"
+              required
+            />
+          </label>
+          <label className="grid gap-2 text-sm">
+            디자인 설명
+            <textarea
+              className="factory-input min-h-32 py-3"
+              maxLength={4000}
+              name="description"
+              placeholder="대상 화면, 사용자 흐름, 클릭 동작, 필수 컬러·간격, 라이트/다크 상태 등"
+              required
+            />
+          </label>
+          <ErrorNotice error={upload.error} />
+          <Button disabled={upload.isPending} type="submit">
+            {upload.isPending ? "검증·업로드 중…" : "디자인 업로드"}
+          </Button>
+        </form>
+      </Card>
+      <Card className="overflow-hidden">
+        <div className="border-b border-zinc-800 px-5 py-4">
+          <h3 className="font-semibold">디자인 자료</h3>
+          <p className="mt-1 text-xs text-zinc-500">03 UX · 파일별 SHA-256 보관</p>
+        </div>
+        <div className="divide-y divide-zinc-800">
+          {designs.map((artifact) => {
+            const version = artifact.versions[0];
+            return (
+              <div className="p-5" key={artifact.id}>
+                <div className="flex flex-wrap items-start gap-3">
+                  <FileCheck2 className="mt-0.5 text-emerald-300" size={18} />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">{artifact.name}</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
+                      {artifact.description || "설명이 없습니다."}
+                    </p>
+                    {version ? (
+                      <p className="mt-3 break-all font-mono text-[11px] text-zinc-600">
+                        SHA-256 {version.sha256}
+                      </p>
+                    ) : null}
+                  </div>
+                  {version ? (
+                    <Button
+                      className="!min-h-8 !bg-zinc-800 !px-3 !py-1 !text-xs !text-zinc-200"
+                      disabled={download.isPending}
+                      onClick={() => download.mutate(version.id)}
+                    >
+                      다운로드
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+          {!artifacts.isPending && !designs.length ? (
+            <p className="p-6 text-sm text-zinc-500">업로드된 디자인 도안이 없습니다.</p>
+          ) : null}
+        </div>
+      </Card>
+    </div>
   );
 }
 
@@ -1238,7 +1254,7 @@ function RepositoryPanel({ project, auth }: { project: Project; auth: AuthState 
       <EmptyState
         icon={<GitBranch size={20} />}
         title="Repository 연결 전"
-        description="최종 승인된 PRD를 잠근 뒤 기존 Repository를 연결하거나 새 Repository를 만들 수 있습니다."
+        description="서버 검증을 통과한 PRD가 자동 잠금되면 기존 Repository를 연결하거나 새 Repository를 만들 수 있습니다."
       />
     );
   }
@@ -1417,14 +1433,21 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
     ? data.events.filter((event) => event.codexRunId === latestRun.id)
     : [];
   const active = ["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(data.status);
+  const pipelineStages = [
+    ["개발", latestRun?.status ?? data.status],
+    ["테스트", data.pipeline.testRun?.status ?? "NOT_STARTED"],
+    ["보안검사", data.pipeline.securityScan?.status ?? "NOT_STARTED"],
+    ["빌드", data.pipeline.build?.status ?? "NOT_STARTED"],
+    ["Release Gate", data.pipeline.release?.status ?? "NOT_STARTED"],
+  ] as const;
   return (
     <div className="grid gap-5">
       <Card className="p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <Badge>{data.type}</Badge>
-              <Badge tone={statusTone(data.status)}>{data.status}</Badge>
+              <Badge>{displayTaskType(data.type)}</Badge>
+              <Badge tone={statusTone(data.status)}>{displayStatus(data.status)}</Badge>
             </div>
             <h3 className="mt-3 text-lg font-semibold">{data.title}</h3>
             <p className="mt-2 font-mono text-xs text-zinc-600">
@@ -1447,26 +1470,60 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
         </div>
         <ErrorNotice error={start.error ?? cancel.error} />
       </Card>
+      <Card className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold tracking-wide text-emerald-300">현재 진행 상태</p>
+            <h3 className="mt-2 text-xl font-semibold">
+              {displayStatus(latestRun?.status ?? data.status)}
+            </h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+              {taskProgressSummary(data.status, latestRun?.status)}
+            </p>
+          </div>
+          {data.job ? (
+            <span className="text-xs text-zinc-600">
+              실행 {data.job.attempts}/{data.job.maxAttempts}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-5 grid gap-3 border-t border-zinc-800 pt-5 sm:grid-cols-2 xl:grid-cols-5">
+          {pipelineStages.map(([label, status]) => (
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-3" key={label}>
+              <span className="block text-xs text-zinc-600">{label}</span>
+              <Badge className="mt-2" tone={statusTone(status)}>
+                {displayStatus(status)}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </Card>
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
           <div>
-            <h3 className="font-semibold">실행 로그</h3>
-            <p className="mt-1 text-xs text-zinc-500">SSE 실시간 이벤트 · JSONL 수집</p>
+            <h3 className="font-semibold">진행 요약</h3>
+            <p className="mt-1 text-xs text-zinc-500">실시간 작업 이벤트를 읽기 쉽게 요약합니다.</p>
           </div>
           <div className="flex items-center gap-2">
             {active ? <span className="size-2 animate-pulse rounded-full bg-emerald-400" /> : null}
             <Badge tone={statusTone(latestRun?.status ?? data.status)}>
-              {latestRun?.status ?? data.status}
+              {displayStatus(latestRun?.status ?? data.status)}
             </Badge>
           </div>
         </div>
-        <div className="max-h-96 overflow-y-auto bg-zinc-950 p-4 font-mono text-xs leading-6">
+        <div className="max-h-96 overflow-y-auto bg-zinc-950 p-4 text-sm leading-6">
           {runEvents.length ? (
             runEvents.map((event) => (
-              <div className="grid grid-cols-[42px_1fr] gap-3" key={event.id}>
-                <span className="text-zinc-700">{String(event.sequence).padStart(3, "0")}</span>
+              <div className="grid grid-cols-[68px_1fr] gap-3 py-1" key={event.id}>
+                <span className="text-xs text-zinc-700">
+                  {new Intl.DateTimeFormat("ko-KR", {
+                    timeZone: "Asia/Seoul",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }).format(new Date(event.createdAt))}
+                </span>
                 <span className={event.level === "ERROR" ? "text-red-300" : "text-zinc-400"}>
-                  <span className="text-emerald-700">[{event.eventType}]</span> {event.message}
+                  {runEventSummary(event)}
                 </span>
               </div>
             ))
@@ -1483,7 +1540,7 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
         <Card className="p-5">
           <h3 className="font-semibold">완료 보고</h3>
           <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-zinc-400">
-            {latestRun.finalMessage ?? latestRun.errorMessage}
+            {latestRun.finalMessage ?? taskProgressSummary(data.status, latestRun.status)}
           </p>
           {latestRun.pullRequestUrl ? (
             <a
@@ -1495,6 +1552,19 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
               <GitPullRequest size={16} /> Pull Request #{latestRun.pullRequestNumber} 열기
             </a>
           ) : null}
+        </Card>
+      ) : null}
+      {latestRun?.resultJson?.changedFiles?.length ? (
+        <Card className="p-5">
+          <h3 className="font-semibold">변경 요약</h3>
+          <div className="mt-4 grid gap-3">
+            {latestRun.resultJson.changedFiles.map((file) => (
+              <div className="rounded-lg border border-zinc-800 p-3" key={file.path}>
+                <code className="text-xs text-emerald-300">{file.path}</code>
+                <p className="mt-2 text-sm text-zinc-400">{file.reason}</p>
+              </div>
+            ))}
+          </div>
         </Card>
       ) : null}
       {!active && data.status !== "DRAFT" ? (
@@ -1597,8 +1667,8 @@ function TasksPanel({ project, auth }: { project: Project; auth: AuthState }) {
                 onClick={() => setSelected(task.id)}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <Badge>{task.type}</Badge>
-                  <Badge tone={statusTone(task.status)}>{task.status}</Badge>
+                  <Badge>{displayTaskType(task.type)}</Badge>
+                  <Badge tone={statusTone(task.status)}>{displayStatus(task.status)}</Badge>
                 </div>
                 <p className="mt-3 truncate text-sm font-medium">{task.title}</p>
                 <time className="mt-2 block text-xs text-zinc-600">
@@ -1627,7 +1697,7 @@ function TasksPanel({ project, auth }: { project: Project; auth: AuthState }) {
                 <option value="FIX_REVIEW">리뷰 수정</option>
                 <option value="FIX_TEST">테스트 수정</option>
                 <option value="FIX_SECURITY">보안 수정</option>
-                <option value="REFACTOR_APPROVED_SCOPE">승인 범위 Refactor</option>
+                <option value="REFACTOR_APPROVED_SCOPE">정의 범위 Refactor</option>
                 <option value="BUILD_RELEASE_CANDIDATE">Release Candidate 빌드</option>
                 <option value="GENERATE_DOCUMENTATION">문서 생성</option>
               </select>
@@ -1675,512 +1745,88 @@ function TasksPanel({ project, auth }: { project: Project; auth: AuthState }) {
         <EmptyState
           icon={<TerminalSquare size={20} />}
           title="개발 작업을 선택하세요"
-          description="잠긴 PRD와 Repository가 준비되면 승인 범위의 Codex 작업을 생성할 수 있습니다."
+          description="잠긴 PRD와 Repository가 준비되면 정의된 범위의 Codex 작업을 생성할 수 있습니다."
         />
       )}
     </div>
   );
 }
 
-function CodeChangesPanel({ projectId }: { projectId: string }) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const tasks = useQuery({
-    queryKey: ["tasks", projectId],
-    queryFn: () => apiRequest<DevelopmentTask[]>(`/projects/${projectId}/tasks`),
+function DevelopmentWorkView({ projects, auth }: { projects: Project[]; auth: AuthState }) {
+  const recentTasks = useQuery({
+    queryKey: ["tasks", "all"],
+    queryFn: () => apiRequest<DevelopmentTask[]>("/tasks"),
+    refetchInterval: 15_000,
   });
+  const [projectId, setProjectId] = useState<string | null>(null);
   useEffect(() => {
-    if (!selected && tasks.data?.[0]) setSelected(tasks.data[0].id);
-  }, [selected, tasks.data]);
-  const detail = useQuery({
-    queryKey: ["task", selected],
-    queryFn: () => apiRequest<DevelopmentTaskDetail>(`/tasks/${selected}`),
-    enabled: Boolean(selected),
+    if (projectId) return;
+    setProjectId(recentTasks.data?.[0]?.projectId ?? projects[0]?.id ?? null);
+  }, [projectId, projects, recentTasks.data]);
+  const project = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => apiRequest<Project>(`/projects/${projectId}`),
+    enabled: Boolean(projectId),
   });
-  const run = detail.data?.runs.find((item) => item.gitDiff);
   return (
     <div className="grid gap-5">
-      <Card className="p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <GitPullRequest size={18} className="text-emerald-300" />
-          <select
-            className="factory-input max-w-md"
-            onChange={(event) => setSelected(event.target.value)}
-            value={selected ?? ""}
-          >
-            {!selected ? <option value="">작업 선택</option> : null}
-            {tasks.data?.map((task) => (
-              <option key={task.id} value={task.id}>
-                {task.title} · {task.status}
-              </option>
-            ))}
-          </select>
-          {run?.pullRequestUrl ? (
-            <a
-              className="text-sm text-emerald-300 hover:text-emerald-200"
-              href={run.pullRequestUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              PR #{run.pullRequestNumber} 열기
-            </a>
-          ) : null}
-          {run?.commitSha ? <code className="text-xs text-zinc-600">{run.commitSha}</code> : null}
-        </div>
-      </Card>
-      {run?.gitDiff ? (
-        <Card className="overflow-hidden">
-          <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
-            <h2 className="font-semibold">Git diff</h2>
-            <Badge tone="info">검토 전</Badge>
-          </div>
-          <pre className="max-h-[680px] overflow-auto bg-zinc-950 p-5 text-xs leading-6 text-zinc-400">
-            {run.gitDiff}
-          </pre>
-        </Card>
-      ) : (
-        <EmptyState
-          icon={<RefreshCw size={20} />}
-          title="수집된 Git diff가 없습니다"
-          description="Codex 작업이 완료되면 Worker가 변경 경로를 검증하고 diff, Commit SHA, Pull Request를 저장합니다."
-        />
-      )}
-    </div>
-  );
-}
-
-function TestRunsPanel({ projectId }: { projectId: string }) {
-  const tests = useQuery({
-    queryKey: ["test-runs", projectId],
-    queryFn: () => apiRequest<TestRun[]>(`/projects/${projectId}/test-runs`),
-  });
-  if (tests.error) return <ErrorNotice error={tests.error} />;
-  if (!tests.data?.length) {
-    return (
-      <EmptyState
-        icon={<TestTube2 size={20} />}
-        title="테스트 실행 기록이 없습니다"
-        description="Codex Worker 또는 승인된 CI Adapter가 구조화된 Test Run을 제출하면 결과가 표시됩니다."
-      />
-    );
-  }
-  return (
-    <div className="grid gap-4">
-      {tests.data.map((run) => (
-        <Card className="overflow-hidden" key={run.id}>
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-800 p-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <Badge tone={statusTone(run.status)}>{run.status}</Badge>
-                <span className="text-sm font-medium">{run.command}</span>
-              </div>
-              <p className="mt-2 font-mono text-xs text-zinc-600">{run.commitSha}</p>
-            </div>
-            <div className="text-right text-xs text-zinc-500">
-              <p>{formatSeoul(run.createdAt)}</p>
-              <p className="mt-1">
-                Acceptance Criteria: {run.summary?.acceptanceCriteriaMet ? "충족" : "미확인"}
-              </p>
-            </div>
-          </div>
-          {run.summary?.note ? (
-            <p className="border-b border-zinc-800 bg-amber-950/20 px-5 py-3 text-xs text-amber-300">
-              {run.summary.note}
-            </p>
-          ) : null}
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className="text-xs text-zinc-600">
-                <tr>
-                  <th className="px-5 py-3">Suite</th>
-                  <th className="px-5 py-3">테스트</th>
-                  <th className="px-5 py-3">결과</th>
-                  <th className="px-5 py-3">메시지</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800">
-                {run.results.map((result) => (
-                  <tr key={result.id}>
-                    <td className="px-5 py-3 text-zinc-500">{result.suite}</td>
-                    <td className="px-5 py-3">{result.name}</td>
-                    <td className="px-5 py-3">
-                      <Badge tone={statusTone(result.status)}>{result.status}</Badge>
-                    </td>
-                    <td className="max-w-md px-5 py-3 text-zinc-500">{result.message || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function SecurityScansPanel({ projectId, auth }: { projectId: string; auth: AuthState }) {
-  const queryClient = useQueryClient();
-  const scans = useQuery({
-    queryKey: ["security-scans", projectId],
-    queryFn: () => apiRequest<SecurityScan[]>(`/projects/${projectId}/security-scans`),
-  });
-  const accept = useMutation({
-    mutationFn: (payload: { securityFindingId: string; reason: string; expiresAt?: string }) =>
-      apiRequest(`/projects/${projectId}/risk-acceptances`, {
-        method: "POST",
-        csrfToken: auth.csrfToken,
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["security-scans", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
-      ]);
-    },
-  });
-  if (scans.error) return <ErrorNotice error={scans.error} />;
-  if (!scans.data?.length) {
-    return (
-      <EmptyState
-        icon={<ShieldCheck size={20} />}
-        title="보안검사 기록이 없습니다"
-        description="승인된 Scanner Adapter가 Finding과 SBOM 참조를 제출하면 Release Gate에서 검증합니다."
-      />
-    );
-  }
-  return (
-    <div className="grid gap-4">
-      <ErrorNotice error={accept.error} />
-      {scans.data.map((scan) => (
-        <Card className="p-5" key={scan.id}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Badge tone={statusTone(scan.status)}>{scan.status}</Badge>
-              <h3 className="font-medium">{scan.scanner}</h3>
-            </div>
-            <div className="text-right text-xs text-zinc-500">
-              <p>{formatSeoul(scan.createdAt)}</p>
-              <p className="mt-1 font-mono">{scan.commitSha.slice(0, 12)}</p>
-            </div>
-          </div>
-          <p className="mt-3 text-xs text-zinc-500">
-            SBOM: {scan.sbomArtifactId ? "연결됨" : "없음 · Release 차단"}
+      <section className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-emerald-300">DEVELOPMENT PIPELINE</p>
+          <h1 className="mt-1 text-2xl font-semibold">개발 작업</h1>
+          <p className="mt-2 text-sm text-zinc-500">
+            Codex 구현부터 테스트·보안검사·빌드까지 하나의 작업 화면에서 확인합니다.
           </p>
-          <div className="mt-4 grid gap-3">
-            {scan.findings.length ? (
-              scan.findings.map((finding) => (
-                <div
-                  className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4"
-                  key={finding.id}
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={statusTone(finding.severity)}>{finding.severity}</Badge>
-                    <Badge tone={statusTone(finding.status)}>{finding.status}</Badge>
-                    <span className="font-medium">{finding.title}</span>
-                    <span className="ml-auto font-mono text-xs text-zinc-600">
-                      {finding.ruleId}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-zinc-400">{finding.description}</p>
-                  {finding.filePath ? (
-                    <p className="mt-2 font-mono text-xs text-zinc-600">
-                      {finding.filePath}
-                      {finding.line ? `:${finding.line}` : ""}
-                    </p>
-                  ) : null}
-                  {finding.remediation ? (
-                    <p className="mt-3 text-xs text-emerald-300">수정: {finding.remediation}</p>
-                  ) : null}
-                  {finding.riskAcceptance ? (
-                    <div className="mt-3 rounded-lg border border-amber-900/60 bg-amber-950/20 p-3 text-xs text-amber-200">
-                      위험 수용 사유: {finding.riskAcceptance.reason}
-                    </div>
-                  ) : finding.status === "OPEN" && finding.severity !== "CRITICAL" ? (
-                    <form
-                      className="mt-4 grid gap-2 border-t border-zinc-800 pt-4 sm:grid-cols-[1fr_180px_auto]"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const data = new FormData(event.currentTarget);
-                        const expiresAt = formString(data, "expiresAt");
-                        accept.mutate({
-                          securityFindingId: finding.id,
-                          reason: formString(data, "reason"),
-                          ...(expiresAt
-                            ? { expiresAt: new Date(`${expiresAt}T23:59:59+09:00`).toISOString() }
-                            : {}),
-                        });
-                      }}
-                    >
-                      <input
-                        className="factory-input"
-                        name="reason"
-                        required
-                        minLength={10}
-                        placeholder="위험 수용 사유 (필수)"
-                      />
-                      <input
-                        aria-label="위험 수용 만료일"
-                        className="factory-input"
-                        name="expiresAt"
-                        type="date"
-                      />
-                      <Button disabled={accept.isPending} type="submit">
-                        위험 수용
-                      </Button>
-                    </form>
-                  ) : finding.severity === "CRITICAL" ? (
-                    <p className="mt-3 text-xs font-medium text-red-300">
-                      CRITICAL은 위험 수용할 수 없으며 반드시 수정해야 합니다.
-                    </p>
-                  ) : null}
-                </div>
-              ))
-            ) : (
-              <p className="rounded-lg border border-emerald-900/50 bg-emerald-950/20 p-4 text-sm text-emerald-300">
-                보고된 Finding이 없습니다.
-              </p>
-            )}
-          </div>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function BuildsPanel({ projectId, auth }: { projectId: string; auth: AuthState }) {
-  const queryClient = useQueryClient();
-  const [approvalReasons, setApprovalReasons] = useState<Record<string, string>>({});
-  const [signingMessage, setSigningMessage] = useState<string | null>(null);
-  const builds = useQuery({
-    queryKey: ["builds", projectId],
-    queryFn: () => apiRequest<FactoryBuild[]>(`/projects/${projectId}/builds`),
-  });
-  const tests = useQuery({
-    queryKey: ["test-runs", projectId],
-    queryFn: () => apiRequest<TestRun[]>(`/projects/${projectId}/test-runs`),
-  });
-  const scans = useQuery({
-    queryKey: ["security-scans", projectId],
-    queryFn: () => apiRequest<SecurityScan[]>(`/projects/${projectId}/security-scans`),
-  });
-  const releases = useQuery({
-    queryKey: ["releases", projectId],
-    queryFn: () => apiRequest<FactoryRelease[]>(`/projects/${projectId}/releases`),
-  });
-  const refresh = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["releases", projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
-    ]);
-  };
-  const createRelease = useMutation({
-    mutationFn: (payload: { buildId: string; testRunId: string; securityScanId: string }) =>
-      apiRequest<FactoryRelease>(`/projects/${projectId}/releases`, {
-        method: "POST",
-        csrfToken: auth.csrfToken,
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: refresh,
-  });
-  const approve = useMutation({
-    mutationFn: (payload: { releaseId: string; reason: string }) =>
-      apiRequest<FactoryRelease>(`/releases/${payload.releaseId}/approve`, {
-        method: "POST",
-        csrfToken: auth.csrfToken,
-        body: JSON.stringify({ reason: payload.reason }),
-      }),
-    onSuccess: refresh,
-  });
-  const sign = useMutation({
-    mutationFn: (releaseId: string) =>
-      apiRequest<{ message: string }>(`/releases/${releaseId}/sign`, {
-        method: "POST",
-        csrfToken: auth.csrfToken,
-      }),
-    onSuccess: (result) => setSigningMessage(result.message),
-  });
-  const download = useMutation({
-    mutationFn: (artifactVersionId: string) =>
-      apiRequest<{ url: string }>(`/artifact-versions/${artifactVersionId}/download`, {
-        csrfToken: auth.csrfToken,
-      }),
-    onSuccess: ({ url }) => window.location.assign(url),
-  });
-  const error =
-    builds.error ||
-    tests.error ||
-    scans.error ||
-    releases.error ||
-    createRelease.error ||
-    approve.error ||
-    sign.error ||
-    download.error;
-  return (
-    <div className="grid gap-5">
-      <ErrorNotice error={error} />
-      {signingMessage ? (
-        <div className="rounded-lg border border-amber-900 bg-amber-950/30 p-4 text-sm text-amber-200">
-          {signingMessage}
         </div>
-      ) : null}
-      <Card className="p-5">
-        <h3 className="font-semibold">Release Candidate 생성</h3>
-        <p className="mt-2 text-sm text-zinc-500">
-          선택한 세 기록의 Commit, 잠긴 PRD Hash, 테스트, Finding, SBOM, 빌드 Artifact를 서버가 다시
-          검증합니다.
-        </p>
-        <form
-          className="mt-4 grid gap-3 lg:grid-cols-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            createRelease.mutate({
-              buildId: formString(data, "buildId"),
-              testRunId: formString(data, "testRunId"),
-              securityScanId: formString(data, "securityScanId"),
-            });
-          }}
-        >
-          <label className="grid gap-2 text-xs text-zinc-500">
-            빌드
-            <select className="factory-input" name="buildId" required>
-              <option value="">선택</option>
-              {builds.data?.map((build) => (
-                <option key={build.id} value={build.id}>
-                  {build.buildType} · {build.status} · {build.commitSha.slice(0, 8)}
+        <label className="grid min-w-64 gap-2 text-xs text-zinc-500">
+          프로젝트
+          <select
+            className="factory-input"
+            value={projectId ?? ""}
+            onChange={(event) => setProjectId(event.target.value || null)}
+          >
+            <option value="">프로젝트 선택</option>
+            {projects.map((item) => {
+              const count =
+                recentTasks.data?.filter((task) => task.projectId === item.id).length ?? 0;
+              return (
+                <option key={item.id} value={item.id}>
+                  {item.name} · 작업 {count}건
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2 text-xs text-zinc-500">
-            Test Run
-            <select className="factory-input" name="testRunId" required>
-              <option value="">선택</option>
-              {tests.data?.map((run) => (
-                <option key={run.id} value={run.id}>
-                  {run.status} · {run.commitSha.slice(0, 8)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2 text-xs text-zinc-500">
-            Security Scan
-            <select className="factory-input" name="securityScanId" required>
-              <option value="">선택</option>
-              {scans.data?.map((scan) => (
-                <option key={scan.id} value={scan.id}>
-                  {scan.scanner} · {scan.status} · {scan.commitSha.slice(0, 8)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="lg:col-span-3">
-            <Button disabled={createRelease.isPending} type="submit">
-              Release Gate 실행 및 Candidate 생성
-            </Button>
-          </div>
-        </form>
-      </Card>
-      <div className="grid gap-3">
-        {builds.data?.map((build) => (
-          <Card className="flex flex-wrap items-center gap-4 p-4" key={build.id}>
-            <Boxes className="text-zinc-600" size={20} />
-            <div>
-              <p className="text-sm font-medium">{build.buildType}</p>
-              <p className="mt-1 font-mono text-xs text-zinc-600">{build.commitSha}</p>
-            </div>
-            <Badge className="ml-auto" tone={statusTone(build.status)}>
-              {build.status}
-            </Badge>
-            <Badge tone={build.signed ? "success" : "warning"}>
-              {build.signed ? "서명됨" : "미서명"}
-            </Badge>
-            {build.artifactVersionId ? (
-              <Button
-                className="!bg-zinc-800 !text-zinc-200 hover:!bg-zinc-700"
-                disabled={download.isPending}
-                onClick={() => download.mutate(build.artifactVersionId!)}
-              >
-                다운로드
-              </Button>
-            ) : null}
-          </Card>
-        ))}
-      </div>
-      <div className="grid gap-3">
-        {releases.data?.map((release) => (
-          <Card className="p-5" key={release.id}>
-            <div className="flex flex-wrap items-center gap-3">
-              <GitPullRequest className="text-zinc-600" size={20} />
-              <div>
-                <p className="text-sm font-medium">Release {release.id.slice(0, 8)}</p>
-                <p className="mt-1 font-mono text-xs text-zinc-600">
-                  {release.commitSha.slice(0, 12)} · PRD {release.prdSha256.slice(0, 12)}
-                </p>
-              </div>
-              <Badge className="ml-auto" tone={statusTone(release.status)}>
-                {release.status}
-              </Badge>
-            </div>
-            {release.gateReport?.blockers?.length ? (
-              <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-red-300">
-                {release.gateReport.blockers.map((blocker) => (
-                  <li key={blocker}>{blocker}</li>
-                ))}
-              </ul>
-            ) : null}
-            {release.status === "CANDIDATE" ? (
-              <form
-                className="mt-4 flex flex-col gap-2 border-t border-zinc-800 pt-4 sm:flex-row"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  approve.mutate({
-                    releaseId: release.id,
-                    reason: approvalReasons[release.id] ?? "",
-                  });
-                }}
-              >
-                <input
-                  className="factory-input flex-1"
-                  minLength={5}
-                  required
-                  value={approvalReasons[release.id] ?? ""}
-                  onChange={(event) =>
-                    setApprovalReasons((current) => ({
-                      ...current,
-                      [release.id]: event.target.value,
-                    }))
-                  }
-                  placeholder="최종 승인 사유"
-                />
-                <Button disabled={approve.isPending} type="submit">
-                  Release Candidate 승인
-                </Button>
-              </form>
-            ) : null}
-            {release.status === "APPROVED" ? (
-              <Button
-                className="mt-4"
-                disabled={sign.isPending}
-                onClick={() => sign.mutate(release.id)}
-              >
-                Signing Worker 요청
-              </Button>
-            ) : null}
-          </Card>
-        ))}
-      </div>
+              );
+            })}
+          </select>
+        </label>
+      </section>
+      <ErrorNotice error={recentTasks.error ?? project.error} />
+      {project.data ? (
+        <TasksPanel key={project.data.id} project={project.data} auth={auth} />
+      ) : !project.isPending ? (
+        <EmptyState
+          icon={<TerminalSquare size={20} />}
+          title="개발할 프로젝트를 선택하세요"
+          description="PRD와 Repository를 준비한 프로젝트의 Codex 작업을 이곳에서 시작합니다."
+        />
+      ) : (
+        <p className="text-sm text-zinc-500">개발 작업을 불러오는 중…</p>
+      )}
     </div>
   );
 }
 
 function ProjectOverview({ project }: { project: Project }) {
   const cards = [
-    ["PRD 버전", project.counts?.prdVersions ?? 0, FileText],
-    ["보관 파일", project.counts?.artifacts ?? 0, Files],
-    ["열린 코멘트", project.counts?.openComments ?? 0, Activity],
-    ["개발 작업", project.counts?.tasks ?? 0, Code2],
-    ["보안 Finding", project.counts?.openFindings ?? 0, ShieldCheck],
-    ["검토 결정", project.counts?.pendingApprovals ?? 0, ClipboardCheck],
+    [
+      "PRD",
+      project.counts?.prdVersions ? `${project.counts.prdVersions}개 버전` : "준비 전",
+      FileText,
+    ],
+    ["디자인·자료", `${project.counts?.artifacts ?? 0}개 파일`, Files],
+    [
+      "Repository",
+      project.repository ? `${project.repository.owner}/${project.repository.name}` : "연결 전",
+      GitBranch,
+    ],
   ] as const;
   return (
     <div className="grid gap-5">
@@ -2191,12 +1837,12 @@ function ProjectOverview({ project }: { project: Project }) {
               <span>{label}</span>
               <Icon size={17} />
             </div>
-            <p className="mt-5 text-3xl font-semibold">{value}</p>
+            <p className="mt-5 truncate text-lg font-semibold">{value}</p>
           </Card>
         ))}
       </div>
       <Card className="p-6">
-        <h2 className="font-semibold">프로젝트 요약</h2>
+        <h2 className="font-semibold">준비 현황</h2>
         <p className="mt-3 leading-7 text-zinc-400">
           {project.summary || "프로젝트 요약이 아직 작성되지 않았습니다."}
         </p>
@@ -2208,12 +1854,8 @@ function ProjectOverview({ project }: { project: Project }) {
             </Badge>
           </div>
           <div>
-            <span className="block text-xs text-zinc-600">저장소</span>
-            <span className="mt-2 block text-zinc-300">
-              {project.repository
-                ? `${project.repository.owner}/${project.repository.name}`
-                : "연결 전"}
-            </span>
+            <span className="block text-xs text-zinc-600">개발 작업</span>
+            <span className="mt-2 block text-zinc-300">{project.counts?.tasks ?? 0}건</span>
           </div>
           <div>
             <span className="block text-xs text-zinc-600">마지막 변경</span>
@@ -2234,7 +1876,6 @@ function ProjectWorkspace({
   auth: AuthState;
   onBack: () => void;
 }) {
-  const [tab, setTab] = useState<(typeof projectTabs)[number]>("개요");
   const project = useQuery({
     queryKey: ["project", projectId],
     queryFn: () => apiRequest<Project>(`/projects/${projectId}`),
@@ -2242,41 +1883,12 @@ function ProjectWorkspace({
   if (project.isPending) return <p className="text-sm text-zinc-500">프로젝트를 불러오는 중…</p>;
   if (project.error || !project.data) return <ErrorNotice error={project.error} />;
   const data = project.data;
-  let content: ReactNode;
-  if (tab === "개요") content = <ProjectOverview project={data} />;
-  else if (tab === "PRD") content = <PrdWorkspace project={data} auth={auth} />;
-  else if (tab === "CEO 제약사항")
-    content = <DecisionPanel projectId={projectId} auth={auth} kind="constraints" />;
-  else if (tab === "의사결정 기록")
-    content = <DecisionPanel projectId={projectId} auth={auth} kind="decisions" />;
-  else if (tab === "개발 작업")
-    content = data.repository ? (
-      <TasksPanel project={data} auth={auth} />
-    ) : (
-      <RepositoryPanel project={data} auth={auth} />
-    );
-  else if (tab === "코드 변경") content = <CodeChangesPanel projectId={projectId} />;
-  else if (tab === "테스트") content = <TestRunsPanel projectId={projectId} />;
-  else if (tab === "보안") content = <SecurityScansPanel projectId={projectId} auth={auth} />;
-  else if (tab === "빌드") content = <BuildsPanel projectId={projectId} auth={auth} />;
-  else if (tab === "파일" || tab === "시장조사")
-    content = <FilesPanel projectId={projectId} auth={auth} />;
-  else if (tab === "활동 기록") content = <ActivityPanel projectId={projectId} />;
-  else {
-    content = (
-      <EmptyState
-        icon={<Blocks size={20} />}
-        title="기록이 아직 없습니다"
-        description="해당 단계의 실제 Task, 보고서 또는 Artifact가 생성되면 이 영역에 연결됩니다."
-      />
-    );
-  }
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-8">
       <button className="w-fit text-sm text-zinc-500 hover:text-white" onClick={onBack}>
         ← 전체 프로젝트
       </button>
-      <section className="flex flex-wrap items-end justify-between gap-4">
+      <section className="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-800 pb-5">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold">{data.name}</h1>
@@ -2284,106 +1896,46 @@ function ProjectWorkspace({
           </div>
           <p className="mt-2 text-sm text-zinc-500">{data.slug}</p>
         </div>
-      </section>
-      <div className="overflow-x-auto border-b border-zinc-800">
-        <div className="flex min-w-max gap-1">
-          {projectTabs.map((item) => (
-            <button
-              className={cn(
-                "border-b-2 px-3 py-3 text-sm transition",
-                item === tab
-                  ? "border-emerald-400 text-white"
-                  : "border-transparent text-zinc-500 hover:text-zinc-200",
-              )}
-              key={item}
-              onClick={() => setTab(item)}
+        <nav className="flex flex-wrap gap-2 text-sm" aria-label="프로젝트 준비 영역">
+          {[
+            ["#project-prd", "PRD"],
+            ["#project-design", "디자인"],
+            ["#project-repository", "Repository"],
+          ].map(([href, label]) => (
+            <a
+              className="rounded-lg border border-zinc-800 px-3 py-2 text-zinc-400 hover:border-zinc-700 hover:text-white"
+              href={href}
+              key={href}
             >
-              {item}
-            </button>
+              {label}
+            </a>
           ))}
+        </nav>
+      </section>
+      <ProjectOverview project={data} />
+      <section className="scroll-mt-20" id="project-prd">
+        <PrdWorkspace project={data} auth={auth} />
+      </section>
+      <section className="scroll-mt-20" id="project-design">
+        <DesignPanel projectId={projectId} auth={auth} />
+      </section>
+      <section className="scroll-mt-20" id="project-repository">
+        <RepositoryPanel project={data} auth={auth} />
+      </section>
+      <details className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-5">
+        <summary className="cursor-pointer text-sm font-semibold text-zinc-300">
+          추가 지침·기록·전체 파일
+        </summary>
+        <p className="mt-2 text-sm text-zinc-500">
+          기존 데이터와 Codex 우선순위 규칙을 보존하기 위한 고급 영역입니다.
+        </p>
+        <div className="mt-5 grid gap-5">
+          <DecisionPanel projectId={projectId} auth={auth} kind="constraints" />
+          <DecisionPanel projectId={projectId} auth={auth} kind="decisions" />
+          <FilesPanel projectId={projectId} auth={auth} />
+          <ActivityPanel projectId={projectId} />
         </div>
-      </div>
-      {content}
-    </div>
-  );
-}
-
-function QualityOverview({ focus }: { focus: "tests" | "security" | "builds" }) {
-  const overview = useQuery({
-    queryKey: ["quality-overview"],
-    queryFn: () =>
-      apiRequest<{
-        tests: Array<Omit<TestRun, "results">>;
-        scans: Array<Omit<SecurityScan, "findings"> & { findings: SecurityScan["findings"] }>;
-        builds: FactoryBuild[];
-        releases: FactoryRelease[];
-      }>("/quality/overview"),
-  });
-  if (overview.error) return <ErrorNotice error={overview.error} />;
-  const titles = {
-    tests: ["테스트", "최근 Test Run과 Acceptance Criteria 검증 상태"],
-    security: ["보안검사", "최근 Scanner 실행, Finding, SBOM 상태"],
-    builds: ["빌드", "최근 APK/AAB 빌드와 Release Candidate"],
-  } as const;
-  const [title, description] = titles[focus];
-  return (
-    <div className="grid gap-5">
-      <div>
-        <p className="text-sm font-medium text-emerald-300">QUALITY CONTROL</p>
-        <h1 className="mt-1 text-2xl font-semibold">{title}</h1>
-        <p className="mt-2 text-sm text-zinc-500">{description}</p>
-      </div>
-      {focus === "tests" ? (
-        <Card className="divide-y divide-zinc-800">
-          {overview.data?.tests.map((run) => (
-            <div className="flex flex-wrap items-center gap-3 p-4" key={run.id}>
-              <Badge tone={statusTone(run.status)}>{run.status}</Badge>
-              <span className="text-sm">{run.command}</span>
-              <span className="ml-auto font-mono text-xs text-zinc-600">
-                {run.commitSha.slice(0, 12)}
-              </span>
-            </div>
-          ))}
-        </Card>
-      ) : focus === "security" ? (
-        <Card className="divide-y divide-zinc-800">
-          {overview.data?.scans.map((scan) => (
-            <div className="flex flex-wrap items-center gap-3 p-4" key={scan.id}>
-              <Badge tone={statusTone(scan.status)}>{scan.status}</Badge>
-              <span className="text-sm">{scan.scanner}</span>
-              <span className="text-xs text-zinc-500">Finding {scan.findings.length}건</span>
-              <span className="ml-auto text-xs text-zinc-500">
-                SBOM {scan.sbomArtifactId ? "있음" : "없음"}
-              </span>
-            </div>
-          ))}
-        </Card>
-      ) : (
-        <div className="grid gap-4">
-          <Card className="divide-y divide-zinc-800">
-            {overview.data?.builds.map((build) => (
-              <div className="flex flex-wrap items-center gap-3 p-4" key={build.id}>
-                <Badge tone={statusTone(build.status)}>{build.status}</Badge>
-                <span className="text-sm">{build.buildType}</span>
-                <Badge className="ml-auto" tone={build.signed ? "success" : "warning"}>
-                  {build.signed ? "서명됨" : "미서명"}
-                </Badge>
-              </div>
-            ))}
-          </Card>
-          <Card className="divide-y divide-zinc-800">
-            {overview.data?.releases.map((release) => (
-              <div className="flex flex-wrap items-center gap-3 p-4" key={release.id}>
-                <Badge tone={statusTone(release.status)}>{release.status}</Badge>
-                <span className="font-mono text-xs">{release.commitSha.slice(0, 12)}</span>
-                <span className="ml-auto text-xs text-zinc-500">
-                  {formatSeoul(release.createdAt)}
-                </span>
-              </div>
-            ))}
-          </Card>
-        </div>
-      )}
+      </details>
     </div>
   );
 }
@@ -2473,6 +2025,7 @@ function SettingsView({ auth, onSignedOut }: { auth: AuthState; onSignedOut: () 
           ["Public URL", config?.publicUrl ?? "—"],
           ["GitHub", config?.githubAdapter ?? "—"],
           ["Codex", `${config?.codexAdapter ?? "—"} · 동시 ${config?.codexConcurrency ?? 1}`],
+          ["PRD 확정", config?.prdApprovalEnabled ? "승인 흐름" : "검증 후 자동 잠금"],
           [
             "MCP",
             config?.mcpEnabled
@@ -2760,8 +2313,8 @@ export function ControlCenter({ auth, onSignedOut }: { auth: AuthState; onSigned
     );
   else if (view === "audit") content = <AuditView />;
   else if (view === "settings") content = <SettingsView auth={auth} onSignedOut={onSignedOut} />;
-  else if (view === "tests" || view === "security" || view === "builds")
-    content = <QualityOverview focus={view} />;
+  else if (view === "tasks")
+    content = <DevelopmentWorkView projects={projects.data ?? []} auth={auth} />;
   else if (view === "dashboard" || view === "projects")
     content = (
       <Dashboard

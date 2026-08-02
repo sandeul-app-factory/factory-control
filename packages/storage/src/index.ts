@@ -34,6 +34,7 @@ export interface ValidatedUpload {
 export interface ObjectStorage {
   health(): Promise<void>;
   put(key: string, upload: ValidatedUpload): Promise<void>;
+  get(key: string): Promise<Buffer>;
   signedDownloadUrl(key: string, downloadName: string): Promise<string>;
 }
 
@@ -155,6 +156,14 @@ export class S3ObjectStorage implements ObjectStorage {
         Metadata: { sha256: upload.sha256 },
       }),
     );
+  }
+
+  async get(key: string): Promise<Buffer> {
+    const response = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    if (!response.Body) throw new Error("저장된 Artifact 본문을 읽을 수 없습니다.");
+    return Buffer.from(await response.Body.transformToByteArray());
   }
 
   async signedDownloadUrl(key: string, downloadName: string): Promise<string> {

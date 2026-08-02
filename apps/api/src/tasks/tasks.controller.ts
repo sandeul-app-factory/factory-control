@@ -9,6 +9,11 @@ import { TasksService } from "./tasks.service.js";
 export class TasksController {
   constructor(private readonly tasks: TasksService) {}
 
+  @Get("tasks")
+  listAll() {
+    return this.tasks.listAll();
+  }
+
   @Get("projects/:projectId/tasks")
   list(@Param("projectId") projectId: string) {
     return this.tasks.list(projectId);
@@ -80,7 +85,6 @@ export class TasksController {
             eventType: event.eventType,
             level: event.level,
             message: event.message,
-            payload: event.payload,
             createdAt: event.createdAt,
           },
         };

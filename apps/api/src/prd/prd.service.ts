@@ -39,6 +39,16 @@ export class PrdService {
     private readonly audit: AuditService,
   ) {}
 
+  private approvalWorkflowEnabled(): boolean {
+    return (
+      (
+        process.env.APPROVAL_WORKFLOW_ENABLED ??
+        process.env.PRD_APPROVAL_ENABLED ??
+        "false"
+      ).toLowerCase() === "true"
+    );
+  }
+
   list(projectId: string) {
     return prisma.prdVersion.findMany({
       where: { projectId, deletedAt: null },
@@ -66,6 +76,23 @@ export class PrdService {
     actor: RequestAuth,
     request: FactoryRequest,
   ) {
+    const existingProject = await prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+    });
+    if (!existingProject) throw new NotFoundException("프로젝트를 찾을 수 없습니다.");
+    const editableStatuses = new Set([
+      "IDEA",
+      "RESEARCHING",
+      "PRD_DRAFT",
+      "REVISION_REQUIRED",
+      "REJECTED",
+      "PRD_LOCKED",
+    ]);
+    if (!editableStatuses.has(existingProject.status)) {
+      throw new ConflictException(
+        "현재 개발 흐름에서는 PRD를 교체할 수 없습니다. 진행 중인 작업을 먼저 정리해 주세요.",
+      );
+    }
     const extension = file.originalname.toLowerCase().split(".").pop();
     if (extension !== "md" && extension !== "json") {
       throw new BadRequestException("Canonical PRD는 .md 또는 schema를 통과한 .json만 가능합니다.");
@@ -143,7 +170,8 @@ export class PrdService {
     if (
       project.status === "IDEA" ||
       project.status === "RESEARCHING" ||
-      project.status === "REVISION_REQUIRED"
+      project.status === "REVISION_REQUIRED" ||
+      project.status === "REJECTED"
     ) {
       await this.projects.transitionSystem(
         projectId,
@@ -170,6 +198,9 @@ export class PrdService {
         submittedForReview: input.submitForReview === "true",
       },
     });
+    if (!this.approvalWorkflowEnabled()) {
+      return this.autoLock(prd.id, actor, request);
+    }
     if (input.submitForReview === "true") {
       await this.requestReview(prd.id, actor, request);
       return this.get(prd.id);
@@ -178,6 +209,9 @@ export class PrdService {
   }
 
   async requestReview(prdVersionId: string, actor: RequestAuth, request: FactoryRequest) {
+    if (!this.approvalWorkflowEnabled()) {
+      return this.autoLock(prdVersionId, actor, request);
+    }
     const prd = await this.get(prdVersionId);
     if (prd.status !== "DRAFT" && prd.status !== "REVISION_REQUIRED") {
       throw new ConflictException("초안 또는 수정 요청 상태의 PRD만 검토 요청할 수 있습니다.");
@@ -236,6 +270,11 @@ export class PrdService {
   }
 
   async approve(prdVersionId: string, body: unknown, actor: RequestAuth, request: FactoryRequest) {
+    if (!this.approvalWorkflowEnabled()) {
+      throw new ConflictException(
+        "PRD 승인 절차는 비활성화되었습니다. 서버 검증을 통과한 PRD는 자동 잠금됩니다.",
+      );
+    }
     const parsed = approvalInputSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const prd = await this.get(prdVersionId);
@@ -312,6 +351,9 @@ export class PrdService {
   }
 
   async lock(prdVersionId: string, actor: RequestAuth, request: FactoryRequest) {
+    if (!this.approvalWorkflowEnabled()) {
+      return this.autoLock(prdVersionId, actor, request);
+    }
     const prd = await this.get(prdVersionId);
     if (prd.status === "LOCKED") return prd;
     if (prd.status !== "APPROVED" || !prd.approvedAt || !prd.approvedBy) {
@@ -372,6 +414,95 @@ export class PrdService {
         sha256: prd.sha256,
         constraintIds: constraints.map((item) => item.id),
         decisionIds: decisions.map((item) => item.id),
+      },
+    });
+    return updated;
+  }
+
+  private async autoLock(prdVersionId: string, actor: RequestAuth, request: FactoryRequest) {
+    const prd = await this.get(prdVersionId);
+    if (prd.status === "LOCKED") return prd;
+    if (!["DRAFT", "IN_REVIEW", "REVISION_REQUIRED", "APPROVED"].includes(prd.status)) {
+      throw new ConflictException("잠금할 수 없는 PRD 상태입니다.");
+    }
+    const [constraintRecords, decisionRecords] = await Promise.all([
+      prisma.ceoConstraint.findMany({
+        where: { projectId: prd.projectId, status: "ACTIVE", deletedAt: null },
+        orderBy: [{ logicalId: "asc" }, { versionNumber: "desc" }],
+      }),
+      prisma.decisionRecord.findMany({
+        where: { projectId: prd.projectId, status: "ACTIVE", deletedAt: null },
+        orderBy: [{ logicalId: "asc" }, { versionNumber: "desc" }],
+      }),
+    ]);
+    const constraints = latestByLogicalId(constraintRecords);
+    const decisions = latestByLogicalId(decisionRecords);
+    const now = new Date();
+    const lockMetadata = {
+      mode: "VALIDATED_UPLOAD_AUTO_LOCK",
+      approvalWorkflowEnabled: false,
+      prdVersion: prd.versionNumber,
+      prdSha256: prd.sha256,
+      validatedBy: actor.userId,
+      validatedAt: now.toISOString(),
+      acceptanceCriteria: prd.acceptanceCriteria,
+      includedArtifactIds: prd.includedArtifactIds,
+      excludedScope: prd.excludedScope,
+    };
+    const updated = await prisma.$transaction(async (transaction) => {
+      await transaction.prdVersion.updateMany({
+        where: { projectId: prd.projectId, status: "LOCKED", id: { not: prd.id } },
+        data: { status: "SUPERSEDED", version: { increment: 1 } },
+      });
+      return transaction.prdVersion.update({
+        where: { id: prd.id },
+        data: {
+          status: "LOCKED",
+          approvedBy: actor.userId,
+          approvedAt: now,
+          lockedBy: actor.userId,
+          lockedAt: now,
+          constraintSnapshot: constraints as unknown as Prisma.InputJsonValue,
+          decisionSnapshot: decisions as unknown as Prisma.InputJsonValue,
+          lockMetadata: lockMetadata as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+    });
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: prd.projectId } });
+    if (project.status === "PRD_REVIEW") {
+      await this.projects.transitionSystem(
+        prd.projectId,
+        "PRD_APPROVED",
+        `PRD v${prd.versionNumber} 서버 검증 완료`,
+        actor,
+        request,
+      );
+    }
+    const refreshedProject = await prisma.project.findUniqueOrThrow({
+      where: { id: prd.projectId },
+    });
+    if (["PRD_DRAFT", "PRD_APPROVED"].includes(refreshedProject.status)) {
+      await this.projects.transitionSystem(
+        prd.projectId,
+        "PRD_LOCKED",
+        `PRD v${prd.versionNumber} 검증 후 자동 잠금 (${prd.sha256})`,
+        actor,
+        request,
+      );
+    }
+    await this.audit.record({
+      actor,
+      action: "PRD_AUTO_LOCK",
+      resourceType: "PrdVersion",
+      resourceId: prd.id,
+      projectId: prd.projectId,
+      requestId: request.requestId,
+      outcome: "SUCCESS",
+      metadata: {
+        versionNumber: prd.versionNumber,
+        sha256: prd.sha256,
+        validationMode: "SCHEMA_AND_UPLOAD_POLICY",
       },
     });
     return updated;

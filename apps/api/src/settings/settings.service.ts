@@ -34,6 +34,12 @@ export class SettingsService {
       githubAdapter: process.env.GITHUB_ADAPTER ?? "fake",
       codexAdapter: process.env.CODEX_ADAPTER ?? "fake",
       codexConcurrency: Number(process.env.CODEX_CONCURRENCY ?? 1),
+      prdApprovalEnabled:
+        (
+          process.env.APPROVAL_WORKFLOW_ENABLED ??
+          process.env.PRD_APPROVAL_ENABLED ??
+          "false"
+        ).toLowerCase() === "true",
       mcpEnabled: (process.env.MCP_ENABLED ?? "false") === "true",
       mcpWriteEnabled: (process.env.MCP_WRITE_ENABLED ?? "false") === "true",
       mcpCredentialCount,

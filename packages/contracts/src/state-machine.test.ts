@@ -4,6 +4,7 @@ import { assertProjectTransition, canTransitionProject } from "./state-machine.j
 describe("project state machine", () => {
   it("allows documented forward transitions", () => {
     expect(canTransitionProject("PRD_APPROVED", "PRD_LOCKED")).toBe(true);
+    expect(canTransitionProject("PRD_DRAFT", "PRD_LOCKED")).toBe(true);
     expect(canTransitionProject("SECURITY_REVIEW", "RELEASE_CANDIDATE")).toBe(true);
   });
 

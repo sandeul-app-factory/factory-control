@@ -10,6 +10,7 @@ import {
   buildCodexPrompt,
   codexEnvironment,
   prepareWindowsWorkspaceAcl,
+  summarizeCodexJsonlEvent,
 } from "./index.js";
 
 const temporaryDirectories: string[] = [];
@@ -24,6 +25,24 @@ afterEach(async () => {
 });
 
 describe("Codex execution contract", () => {
+  it("converts raw Codex JSONL into CEO-readable summaries", () => {
+    expect(summarizeCodexJsonlEvent({ type: "thread.started" })).toBe(
+      "Codex 개발 세션을 시작했습니다.",
+    );
+    expect(
+      summarizeCodexJsonlEvent({
+        type: "item.completed",
+        item: { type: "command_execution", command: "secret command", exit_code: 0 },
+      }),
+    ).toBe("구현·검증 명령이 정상 완료되었습니다.");
+    expect(
+      summarizeCodexJsonlEvent({
+        type: "item.completed",
+        item: { type: "agent_message", text: "  로그인   화면 구현 완료  " },
+      }),
+    ).toBe("로그인 화면 구현 완료");
+  });
+
   it("renders authority, immutable rules, task, and locked PRD hash", () => {
     const output = buildCodexPrompt({
       project: { id: "project", name: "Factory", summary: "Control plane" },
@@ -36,6 +55,14 @@ describe("Codex execution contract", () => {
       },
       constraints: [{ title: "No signing key" }],
       decisions: [{ title: "MVP" }],
+      designs: [
+        {
+          name: "home.png",
+          description: "홈 화면 디자인",
+          sha256: "b".repeat(64),
+          localPath: ".factory-input/designs/design-home.png",
+        },
+      ],
       task: {
         id: "task",
         type: "IMPLEMENT_PRD",

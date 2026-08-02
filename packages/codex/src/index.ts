@@ -16,6 +16,12 @@ export interface CodexPromptContext {
   };
   constraints: unknown[];
   decisions: unknown[];
+  designs: Array<{
+    name: string;
+    description: string;
+    sha256: string;
+    localPath: string;
+  }>;
   task: {
     id: string;
     type: string;
@@ -157,6 +163,12 @@ export function buildCodexPrompt(context: CodexPromptContext): {
     "",
     "## Decision Records",
     JSON.stringify(context.decisions, null, 2),
+    "",
+    "## Figma design exports",
+    context.designs.length
+      ? JSON.stringify(context.designs, null, 2)
+      : "제공된 디자인 도안이 없습니다.",
+    "- .factory-input/designs 파일은 읽기 전용 입력이며 수정하거나 Commit하지 않는다.",
     "",
     "## Current Task",
     JSON.stringify(context.task, null, 2),
@@ -443,20 +455,61 @@ export async function prepareWindowsWorkspaceAcl(
   await writeMarker(markerPath, markerValue);
 }
 
+function compactText(value: string, maxLength = 500): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+export function summarizeCodexJsonlEvent(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "Codex 작업 정보가 갱신되었습니다.";
+  const record = payload as Record<string, unknown>;
+  const type = typeof record.type === "string" ? record.type : "codex.event";
+  const item =
+    record.item && typeof record.item === "object"
+      ? (record.item as Record<string, unknown>)
+      : undefined;
+  const itemType = typeof item?.type === "string" ? item.type : undefined;
+
+  if (type === "thread.started") return "Codex 개발 세션을 시작했습니다.";
+  if (type === "turn.started") return "요구사항을 분석하고 구현을 시작했습니다.";
+  if (type === "turn.completed") return "Codex 구현 단계가 완료되었습니다.";
+  if (type === "turn.failed" || type === "error") {
+    const message = typeof record.message === "string" ? compactText(record.message, 300) : "";
+    return message ? `Codex 실행이 실패했습니다: ${message}` : "Codex 실행이 실패했습니다.";
+  }
+  if (itemType === "agent_message") {
+    const text = typeof item?.text === "string" ? compactText(item.text) : "";
+    return text || "Codex가 진행 상태를 정리했습니다.";
+  }
+  if (itemType === "command_execution") {
+    const exitCode = typeof item?.exit_code === "number" ? item.exit_code : undefined;
+    if (type === "item.started") return "구현·검증 명령을 실행 중입니다.";
+    if (exitCode === 0) return "구현·검증 명령이 정상 완료되었습니다.";
+    return `구현·검증 명령이 실패했습니다${exitCode === undefined ? "." : ` (exit ${exitCode}).`}`;
+  }
+  if (itemType === "file_change") {
+    const changes = Array.isArray(item?.changes) ? item.changes.length : undefined;
+    return changes ? `소스 파일 ${changes}개를 변경했습니다.` : "소스 파일을 변경했습니다.";
+  }
+  if (itemType === "todo_list") return "개발 작업 계획과 진행률을 갱신했습니다.";
+  if (itemType === "reasoning") return "요구사항과 현재 구현을 분석했습니다.";
+  if (itemType === "web_search") return "구현에 필요한 공식 자료를 확인했습니다.";
+  if (type === "item.started") return "Codex가 다음 개발 단계를 시작했습니다.";
+  if (type === "item.completed") return "Codex가 개발 단계 하나를 완료했습니다.";
+  const message = typeof record.message === "string" ? compactText(record.message) : "";
+  return message || "Codex 작업 상태가 갱신되었습니다.";
+}
+
 function parseJsonlEvent(line: string): CodexEvent {
   try {
     const payload: unknown = JSON.parse(line);
     const record = payload as Record<string, unknown>;
     return {
       type: typeof record.type === "string" ? record.type : "codex.event",
-      message:
-        typeof record.message === "string"
-          ? record.message
-          : JSON.stringify(payload).slice(0, 4000),
+      message: summarizeCodexJsonlEvent(payload),
       payload,
     };
   } catch {
-    return { type: "codex.output", message: line.slice(0, 4000) };
+    return { type: "codex.output", message: "Codex 작업 정보가 갱신되었습니다." };
   }
 }
 
