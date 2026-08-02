@@ -264,22 +264,6 @@ test("PRD·디자인·Repository부터 Codex 검증·빌드까지 실행한다",
   const diff = await api<JsonRecord>(request, `/prd-versions/${prd1.id}/diff/${prd2.id}`);
   expect(diff).toBeTruthy();
 
-  await api(request, `/projects/${project!.id}/artifacts/UX/03%20UX`, {
-    method: "POST",
-    headers: { "x-csrf-token": auth.csrfToken },
-    multipart: {
-      file: {
-        name: "home.png",
-        mimeType: "image/png",
-        buffer: Buffer.from(
-          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=",
-          "base64",
-        ),
-      },
-      description: "홈 화면 Figma 내보내기 · 메인 버튼은 메모 작성 화면으로 이동",
-    },
-  });
-
   await openProject(page, projectName);
   const main = page.locator("main");
   await expect(main.getByText("PRD 준비", { exact: true })).toBeVisible();
@@ -289,7 +273,29 @@ test("PRD·디자인·Repository부터 Codex 검증·빌드까지 실행한다",
   );
   await expect(main.getByText("PRD v2", { exact: true })).toBeVisible();
   await expect(main.getByText("LOCKED", { exact: true }).first()).toBeVisible();
-  await expect(main.getByText("홈 화면 Figma 내보내기", { exact: false })).toBeVisible();
+
+  const pixel = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await main.getByLabel("디자인 파일 다중 선택").setInputFiles([
+    { name: "01_홈.png", mimeType: "image/png", buffer: pixel },
+    { name: "02_메모작성.png", mimeType: "image/png", buffer: pixel },
+    {
+      name: "design-spec.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from(
+        "# 디자인 스펙\n\n## 01_홈\n메인 버튼은 메모 작성 화면으로 이동한다.\n\n## 02_메모작성\n저장 버튼은 입력 완료 후 활성화한다.",
+        "utf8",
+      ),
+    },
+  ]);
+  await expect(main.getByText("통합 MD 스펙 포함", { exact: true })).toBeVisible();
+  await main.getByRole("button", { name: "디자인 자료 3개 업로드" }).click();
+  await expect(main.getByText(/디자인 자료 3개를 업로드했습니다/)).toBeVisible();
+  const designSection = page.locator("#project-design");
+  await expect(designSection.getByText("01_홈.png", { exact: true })).toBeVisible();
+  await expect(designSection.getByText("design-spec.md", { exact: true })).toBeVisible();
 
   const repository = await api<{
     id: string;

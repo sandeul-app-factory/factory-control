@@ -910,6 +910,14 @@ function FilesPanel({ projectId, auth }: { projectId: string; auth: AuthState })
 
 function DesignPanel({ projectId, auth }: { projectId: string; auth: AuthState }) {
   const queryClient = useQueryClient();
+  const [pendingFiles, setPendingFiles] = useState<
+    Array<{ id: string; file: File; description: string }>
+  >([]);
+  const [inputRevision, setInputRevision] = useState(0);
+  const [batchNotice, setBatchNotice] = useState<{
+    tone: "success" | "danger" | "neutral";
+    text: string;
+  } | null>(null);
   const artifacts = useQuery({
     queryKey: ["artifacts", projectId],
     queryFn: () => apiRequest<Artifact[]>(`/projects/${projectId}/artifacts`),
@@ -918,18 +926,54 @@ function DesignPanel({ projectId, auth }: { projectId: string; auth: AuthState }
     (artifact) => artifact.kind === "UX" && artifact.logicalFolder === "03 UX",
   );
   const upload = useMutation({
-    mutationFn: (form: HTMLFormElement) =>
-      apiRequest<Artifact>(`/projects/${projectId}/artifacts/UX/03%20UX`, {
-        method: "POST",
-        csrfToken: auth.csrfToken,
-        body: new FormData(form),
-      }),
-    onSuccess: async (_artifact, form) => {
-      form.reset();
+    mutationFn: async (entries: typeof pendingFiles) => {
+      const uploaded: Artifact[] = [];
+      const failures: Array<{ id: string; message: string }> = [];
+      for (const entry of entries) {
+        const body = new FormData();
+        body.append("file", entry.file);
+        const description =
+          entry.description.trim() ||
+          (entry.file.name.toLowerCase().endsWith(".md") ? "화면별 통합 디자인 스펙 Markdown" : "");
+        if (description) body.append("description", description);
+        try {
+          uploaded.push(
+            await apiRequest<Artifact>(`/projects/${projectId}/artifacts/UX/03%20UX`, {
+              method: "POST",
+              csrfToken: auth.csrfToken,
+              body,
+            }),
+          );
+        } catch (error: unknown) {
+          failures.push({
+            id: entry.id,
+            message: error instanceof Error ? error.message : "업로드에 실패했습니다.",
+          });
+        }
+      }
+      return { uploaded, failures };
+    },
+    onSuccess: async ({ uploaded, failures }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["artifacts", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
       ]);
+      if (failures.length) {
+        const failedIds = new Set(failures.map((failure) => failure.id));
+        setPendingFiles((current) => current.filter((entry) => failedIds.has(entry.id)));
+        setInputRevision((value) => value + 1);
+        setBatchNotice({
+          tone: "danger",
+          text: `${uploaded.length}개 업로드 완료, ${failures.length}개 실패했습니다. 실패한 파일만 남겨두었습니다: ${failures.map((failure) => failure.message).join(" / ")}`,
+        });
+        return;
+      }
+      setPendingFiles([]);
+      setInputRevision((value) => value + 1);
+      setBatchNotice({
+        tone: "success",
+        text: `디자인 자료 ${uploaded.length}개를 업로드했습니다. 다음 Codex 작업부터 모두 입력자료로 전달됩니다.`,
+      });
     },
   });
   const download = useMutation({
@@ -937,6 +981,12 @@ function DesignPanel({ projectId, auth }: { projectId: string; auth: AuthState }
       apiRequest<{ url: string }>(`/artifact-versions/${versionId}/download`),
     onSuccess: ({ url }) => window.location.assign(url),
   });
+  const hasMarkdownSpec = pendingFiles.some((entry) =>
+    entry.file.name.toLowerCase().endsWith(".md"),
+  );
+  const missingDescriptions = hasMarkdownSpec
+    ? []
+    : pendingFiles.filter((entry) => !entry.description.trim());
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(300px,420px)_1fr]">
       <Card className="h-fit p-5">
@@ -945,39 +995,151 @@ function DesignPanel({ projectId, auth }: { projectId: string; auth: AuthState }
           <h2 className="font-semibold">Figma 디자인 도안</h2>
         </div>
         <p className="mt-2 text-sm leading-6 text-zinc-500">
-          Figma에서 내보낸 PNG, JPG, WebP 또는 PDF를 업로드하세요. 화면 의도, 상호작용, 상태별
-          차이는 설명에 기록하면 Codex 작업 자료로 함께 보관됩니다.
+          Figma 화면 PNG 여러 장과 화면별 통합 디자인 스펙 MD를 한 번에 선택하세요. Codex가 잠긴
+          PRD의 기능명, 원본 파일명과 Markdown 항목을 서로 연결합니다.
         </p>
         <form
           className="mt-5 grid gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            upload.mutate(event.currentTarget);
+            if (!pendingFiles.length) {
+              setBatchNotice({ tone: "danger", text: "업로드할 디자인 파일을 선택해 주세요." });
+              return;
+            }
+            if (missingDescriptions.length) {
+              setBatchNotice({
+                tone: "danger",
+                text: "통합 Markdown 스펙이 없으면 각 화면 파일의 설명을 입력해야 합니다.",
+              });
+              return;
+            }
+            setBatchNotice(null);
+            upload.mutate(pendingFiles);
           }}
         >
           <label className="grid gap-2 text-sm">
-            디자인 파일
+            디자인 파일 다중 선택
             <input
               className="factory-input file:mr-3 file:rounded-md file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-zinc-200"
+              key={inputRevision}
               name="file"
               type="file"
-              accept=".png,.jpg,.jpeg,.webp,.pdf,image/png,image/jpeg,image/webp,application/pdf"
+              accept=".png,.jpg,.jpeg,.webp,.pdf,.md,image/png,image/jpeg,image/webp,application/pdf,text/markdown,text/plain"
+              disabled={upload.isPending}
+              multiple
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                const allowed = /\.(png|jpe?g|webp|pdf|md)$/i;
+                if (files.length > 30) {
+                  event.target.value = "";
+                  setPendingFiles([]);
+                  setBatchNotice({
+                    tone: "danger",
+                    text: "한 번에 최대 30개까지 업로드할 수 있습니다.",
+                  });
+                  return;
+                }
+                const invalid = files.find((file) => !allowed.test(file.name));
+                if (invalid) {
+                  event.target.value = "";
+                  setPendingFiles([]);
+                  setBatchNotice({
+                    tone: "danger",
+                    text: `지원하지 않는 파일입니다: ${invalid.name}`,
+                  });
+                  return;
+                }
+                setPendingFiles(
+                  files.map((file) => ({
+                    id: crypto.randomUUID(),
+                    file,
+                    description: file.name.toLowerCase().endsWith(".md")
+                      ? "화면별 통합 디자인 스펙 Markdown"
+                      : "",
+                  })),
+                );
+                setBatchNotice(null);
+              }}
               required
             />
           </label>
-          <label className="grid gap-2 text-sm">
-            디자인 설명
-            <textarea
-              className="factory-input min-h-32 py-3"
-              maxLength={4000}
-              name="description"
-              placeholder="대상 화면, 사용자 흐름, 클릭 동작, 필수 컬러·간격, 라이트/다크 상태 등"
-              required
-            />
-          </label>
+          {pendingFiles.length ? (
+            <div className="grid gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+                <span>선택 파일 {pendingFiles.length}개</span>
+                <Badge tone={hasMarkdownSpec ? "success" : "warning"}>
+                  {hasMarkdownSpec ? "통합 MD 스펙 포함" : "파일별 설명 필요"}
+                </Badge>
+              </div>
+              <div className="grid max-h-[520px] gap-3 overflow-y-auto pr-1">
+                {pendingFiles.map((entry) => {
+                  const specification = entry.file.name.toLowerCase().endsWith(".md");
+                  return (
+                    <div
+                      className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3"
+                      key={entry.id}
+                    >
+                      <div className="flex items-center gap-2">
+                        <FileText size={15} className="text-zinc-500" />
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                          {entry.file.name}
+                        </span>
+                        <Badge tone={specification ? "info" : "neutral"}>
+                          {specification ? "스펙" : "화면"}
+                        </Badge>
+                      </div>
+                      <label className="mt-3 grid gap-2 text-xs text-zinc-500">
+                        {specification ? "문서 설명" : "화면별 추가 설명"}
+                        <textarea
+                          aria-label={`${entry.file.name} 설명`}
+                          className="factory-input min-h-20 py-2 text-sm"
+                          disabled={upload.isPending}
+                          maxLength={4000}
+                          placeholder={
+                            specification
+                              ? "예: PRD 13개 화면의 상태·간격·상호작용 통합 명세"
+                              : hasMarkdownSpec
+                                ? "MD에 없는 예외나 구현 주의사항이 있을 때만 입력"
+                                : "관련 PRD 기능명, 화면 상태, 클릭 동작, 간격 등을 입력"
+                          }
+                          value={entry.description}
+                          onChange={(event) => {
+                            const description = event.target.value;
+                            setPendingFiles((current) =>
+                              current.map((item) =>
+                                item.id === entry.id ? { ...item, description } : item,
+                              ),
+                            );
+                          }}
+                        />
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           <ErrorNotice error={upload.error} />
+          {batchNotice ? (
+            <p
+              className={cn(
+                "rounded-lg border px-3 py-2 text-sm leading-6",
+                batchNotice.tone === "success"
+                  ? "border-emerald-900 bg-emerald-950/30 text-emerald-300"
+                  : batchNotice.tone === "danger"
+                    ? "border-red-900 bg-red-950/30 text-red-300"
+                    : "border-zinc-800 text-zinc-400",
+              )}
+            >
+              {batchNotice.text}
+            </p>
+          ) : null}
           <Button disabled={upload.isPending} type="submit">
-            {upload.isPending ? "검증·업로드 중…" : "디자인 업로드"}
+            {upload.isPending
+              ? `검증·업로드 중… (${pendingFiles.length}개)`
+              : pendingFiles.length
+                ? `디자인 자료 ${pendingFiles.length}개 업로드`
+                : "디자인 자료 업로드"}
           </Button>
         </form>
       </Card>
@@ -994,7 +1156,14 @@ function DesignPanel({ projectId, auth }: { projectId: string; auth: AuthState }
                 <div className="flex flex-wrap items-start gap-3">
                   <FileCheck2 className="mt-0.5 text-emerald-300" size={18} />
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium">{artifact.name}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{artifact.name}</p>
+                      <Badge
+                        tone={artifact.name.toLowerCase().endsWith(".md") ? "info" : "neutral"}
+                      >
+                        {artifact.name.toLowerCase().endsWith(".md") ? "통합 스펙" : "화면 도안"}
+                      </Badge>
+                    </div>
                     <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
                       {artifact.description || "설명이 없습니다."}
                     </p>

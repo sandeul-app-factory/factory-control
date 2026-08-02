@@ -441,7 +441,7 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
       },
       include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
       orderBy: { updatedAt: "desc" },
-      take: 30,
+      take: 100,
     }),
     prisma.codexRunEvent.aggregate({
       where: { codexRunId: run.id },
@@ -516,10 +516,15 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
   const designs = [] as Array<{
     name: string;
     description: string;
+    mimeType: string;
+    role: "SCREEN_EXPORT" | "SPECIFICATION";
     sha256: string;
     localPath: string;
   }>;
+  const materializedDesignNames = new Set<string>();
   for (const artifact of designArtifacts) {
+    const normalizedName = artifact.name.toLocaleLowerCase("ko");
+    if (materializedDesignNames.has(normalizedName)) continue;
     const version = artifact.versions[0];
     if (!version) continue;
     const buffer = await readArtifactObject(version.objectKey);
@@ -531,10 +536,16 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
     designs.push({
       name: artifact.name,
       description: artifact.description ?? "",
+      mimeType: version.mimeType,
+      role: version.originalName.toLowerCase().endsWith(".md") ? "SPECIFICATION" : "SCREEN_EXPORT",
       sha256: version.sha256,
       localPath: `.factory-input/designs/${localName}`,
     });
+    materializedDesignNames.add(normalizedName);
   }
+  designs.sort((left, right) =>
+    left.name.localeCompare(right.name, "ko", { numeric: true, sensitivity: "base" }),
+  );
   await writeFile(
     join(designDirectory, "manifest.json"),
     JSON.stringify({ generatedAt: new Date().toISOString(), designs }, null, 2),

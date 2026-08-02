@@ -45,6 +45,13 @@ function normalizedExtension(name: string): string {
   return lastDot >= 0 ? lowered.slice(lastDot) : "";
 }
 
+export function normalizeUploadFilename(name: string): string {
+  const latin1Decoded = Buffer.from(name, "latin1").toString("utf8");
+  const containsNonAscii = [...latin1Decoded].some((character) => character.charCodeAt(0) > 0x7f);
+  const normalized = !latin1Decoded.includes("\uFFFD") && containsNonAscii ? latin1Decoded : name;
+  return normalized.normalize("NFC");
+}
+
 export async function validateUpload(
   buffer: Buffer,
   originalName: string,
@@ -54,11 +61,12 @@ export async function validateUpload(
   if (buffer.length === 0 || buffer.length > maxBytes) {
     throw new Error(`파일 크기는 1~${maxBytes} bytes 범위여야 합니다.`);
   }
-  if (/[/\\\0]/.test(originalName) || originalName.length > 500) {
+  const normalizedName = normalizeUploadFilename(originalName);
+  if (/[/\\\0]/.test(normalizedName) || normalizedName.length > 500) {
     throw new Error("안전하지 않은 파일명입니다.");
   }
 
-  const extension = normalizedExtension(originalName);
+  const extension = normalizedExtension(normalizedName);
   const allowedMimes = extensionMimeMap[extension];
   if (!allowedMimes) {
     throw new Error("허용되지 않은 파일 확장자입니다.");
@@ -85,7 +93,7 @@ export async function validateUpload(
 
   return {
     buffer,
-    originalName,
+    originalName: normalizedName,
     extension,
     mimeType: effectiveMime,
     sha256: sha256(buffer),

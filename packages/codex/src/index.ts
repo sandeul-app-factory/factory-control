@@ -19,6 +19,8 @@ export interface CodexPromptContext {
   designs: Array<{
     name: string;
     description: string;
+    mimeType: string;
+    role: "SCREEN_EXPORT" | "SPECIFICATION";
     sha256: string;
     localPath: string;
   }>;
@@ -168,6 +170,9 @@ export function buildCodexPrompt(context: CodexPromptContext): {
     context.designs.length
       ? JSON.stringify(context.designs, null, 2)
       : "제공된 디자인 도안이 없습니다.",
+    "- SPECIFICATION 역할의 Markdown 문서를 먼저 읽고, 문서의 화면명·기능명·파일명을 SCREEN_EXPORT 이미지와 잠긴 PRD에 연결한다.",
+    "- 나열 순서만으로 화면을 연결하지 말고 PRD의 화면 ID, 기능명, 원본 파일명을 우선 사용한다.",
+    "- 이미지와 Markdown 명세가 충돌하거나 대응 관계가 불명확하면 임의로 결정하지 말고 완료 보고의 assumptions 또는 questions에 기록한다.",
     "- .factory-input/designs 파일은 읽기 전용 입력이며 수정하거나 Commit하지 않는다.",
     "",
     "## Current Task",

@@ -59,8 +59,18 @@ describe("Codex execution contract", () => {
         {
           name: "home.png",
           description: "홈 화면 디자인",
+          mimeType: "image/png",
+          role: "SCREEN_EXPORT",
           sha256: "b".repeat(64),
           localPath: ".factory-input/designs/design-home.png",
+        },
+        {
+          name: "design-spec.md",
+          description: "13개 화면 통합 디자인 스펙",
+          mimeType: "text/markdown",
+          role: "SPECIFICATION",
+          sha256: "c".repeat(64),
+          localPath: ".factory-input/designs/design-spec.md",
         },
       ],
       task: {
@@ -77,6 +87,8 @@ describe("Codex execution contract", () => {
     });
     expect(output.prompt).toContain("1. 잠긴 PRD");
     expect(output.prompt).toContain("Android signing key에 접근하지 않는다.");
+    expect(output.prompt).toContain("SPECIFICATION 역할의 Markdown 문서를 먼저 읽고");
+    expect(output.prompt).toContain("design-spec.md");
     expect(output.prompt).toContain("a".repeat(64));
     expect(output.sha256).toMatch(/^[a-f0-9]{64}$/);
   });

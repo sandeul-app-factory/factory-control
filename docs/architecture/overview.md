@@ -37,7 +37,7 @@ CEO Browser
 
 1. 프로젝트 생성
 2. 최종 PRD 업로드, 서버 Schema 검증 및 자동 잠금
-3. Figma 디자인 export와 구현 설명 업로드
+3. Figma 화면 export 여러 장과 통합 Markdown 디자인 스펙 일괄 업로드
 4. GitHub Repository 생성 또는 연결
 5. `IMPLEMENT_PRD` Task 생성과 사용자 시작
 6. Codex 구현, Commit, push와 PR 생성
