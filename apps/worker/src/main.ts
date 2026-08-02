@@ -1,5 +1,5 @@
-import { mkdir, rm } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { dirname, join, resolve, sep } from "node:path";
 import { Worker } from "bullmq";
 import { Redis } from "ioredis";
 import { Prisma, prisma } from "@sandeul/database";
@@ -21,6 +21,11 @@ import {
   validateGithubUrl,
   validateGitRef,
 } from "./git-runner.js";
+import {
+  cleanupRunWorkspace,
+  inspectRepositoryWorkspace,
+  shouldCleanupWorkspace,
+} from "./workspace.js";
 
 interface FactoryJobData {
   developmentTaskId: string;
@@ -38,8 +43,12 @@ const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
 const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
 const queueName = process.env.CODEX_QUEUE_NAME ?? "codex-tasks";
 const concurrency = Number(process.env.CODEX_CONCURRENCY ?? 1);
+const jobTimeoutMs = Number(process.env.CODEX_JOB_TIMEOUT_MS ?? 10_800_000);
 if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 8) {
   throw new Error("CODEX_CONCURRENCY는 1~8 범위의 정수여야 합니다.");
+}
+if (!Number.isSafeInteger(jobTimeoutMs) || jobTimeoutMs < 60_000 || jobTimeoutMs > 86_400_000) {
+  throw new Error("CODEX_JOB_TIMEOUT_MS must be between 60000 and 86400000 milliseconds");
 }
 
 function jsonStringArray(value: Prisma.JsonValue): string[] {
@@ -443,20 +452,41 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
     validateGitRef(task.targetBranch);
     const authorizationHeader = await github.cloneAuthorizationHeader();
     const cloneUrl = validateGithubUrl(repository.htmlUrl);
-    await runGit(
-      [
-        "clone",
-        "--no-tags",
-        "--depth",
-        "50",
-        "--branch",
-        task.targetBranch,
-        cloneUrl,
-        repositoryPath,
-      ],
-      dirname(repositoryPath),
-      { ...(authorizationHeader ? { authorizationHeader } : {}) },
-    );
+    const workspaceState = await inspectRepositoryWorkspace(repositoryPath);
+    if (workspaceState === "INVALID") {
+      throw new Error(
+        `Codex workspace is non-empty but is not a reusable Git repository: ${repositoryPath}`,
+      );
+    }
+    if (workspaceState === "REUSABLE") {
+      const origin = (
+        await runGit(["config", "--get", "remote.origin.url"], repositoryPath)
+      ).stdout.trim();
+      if (validateGithubUrl(origin) !== cloneUrl) {
+        throw new Error("Existing Codex workspace origin does not match the task repository");
+      }
+      await addEvent(
+        run.id,
+        sequence,
+        "workspace.reused",
+        "이전 시도에서 보존한 Git 작업공간을 재사용합니다.",
+      );
+    } else {
+      await runGit(
+        [
+          "clone",
+          "--no-tags",
+          "--depth",
+          "50",
+          "--branch",
+          task.targetBranch,
+          cloneUrl,
+          repositoryPath,
+        ],
+        dirname(repositoryPath),
+        { ...(authorizationHeader ? { authorizationHeader } : {}) },
+      );
+    }
     if (task.targetCommitSha) {
       await runGit(["checkout", "--detach", task.targetCommitSha], repositoryPath);
       const checkedOut = (await runGit(["rev-parse", "HEAD"], repositoryPath)).stdout.trim();
@@ -530,7 +560,7 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(new Error("Codex execution timed out")),
-    Number(process.env.CODEX_JOB_TIMEOUT_MS ?? 1_800_000),
+    jobTimeoutMs,
   );
   timeout.unref();
   const cancellationPoll = setInterval(() => {
@@ -543,6 +573,8 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
       });
   }, 1_000);
   cancellationPoll.unref();
+  let executionSucceeded = false;
+  let userCancelled = false;
   try {
     const output = await codex.execute(
       {
@@ -717,6 +749,7 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
       { releaseId: quality.releaseId },
       quality.gatePassed ? "INFO" : "WARN",
     );
+    executionSucceeded = true;
     return { commitSha, pullRequestUrl: pullRequest.htmlUrl };
   } catch (error) {
     const cancelled =
@@ -728,6 +761,7 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
         })
       )?.cancellationRequestedAt;
     if (cancelled) {
+      userCancelled = true;
       await prisma.$transaction([
         prisma.codexRun.update({
           where: { id: run.id },
@@ -759,14 +793,26 @@ async function processJob(data: FactoryJobData): Promise<WorkerResult> {
   } finally {
     clearTimeout(timeout);
     clearInterval(cancellationPoll);
-    if ((process.env.CODEX_WORKSPACE_CLEANUP ?? "true") === "true") {
+    if (
+      shouldCleanupWorkspace({
+        cleanupEnabled: (process.env.CODEX_WORKSPACE_CLEANUP ?? "true") === "true",
+        executionSucceeded,
+        userCancelled,
+      })
+    ) {
       const root = resolve(process.env.CODEX_WORKSPACE_ROOT ?? "/srv/factory-workspaces");
-      const target = resolve(runRoot);
-      const insideRoot =
-        isAbsolute(target) &&
-        target.startsWith(`${root}${sep}`) &&
-        relative(root, target).split(sep).length >= 3;
-      if (insideRoot) await rm(target, { recursive: true, force: true });
+      try {
+        await cleanupRunWorkspace(root, runRoot);
+      } catch (cleanupError) {
+        await addEvent(
+          run.id,
+          sequence,
+          "workspace.cleanup_failed",
+          cleanupError instanceof Error ? cleanupError.message : "Workspace cleanup failed",
+          undefined,
+          "WARN",
+        ).catch(() => undefined);
+      }
     }
   }
 }
@@ -789,7 +835,7 @@ const worker = new Worker<FactoryJobData, WorkerResult>(
   {
     connection,
     concurrency,
-    lockDuration: Number(process.env.CODEX_JOB_TIMEOUT_MS ?? 1_800_000),
+    lockDuration: jobTimeoutMs,
   },
 );
 
