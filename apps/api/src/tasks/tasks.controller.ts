@@ -1,4 +1,5 @@
 import { Body, Controller, Get, MessageEvent, Param, Post, Query, Sse } from "@nestjs/common";
+import { SkipThrottle } from "@nestjs/throttler";
 import { interval, map, mergeMap, type Observable } from "rxjs";
 import { CurrentAuth, CurrentRequest, Roles } from "../common/decorators.js";
 import type { FactoryRequest, RequestAuth } from "../common/request-context.js";
@@ -60,6 +61,7 @@ export class TasksController {
     return this.tasks.cancel(taskId, actor, request);
   }
 
+  @SkipThrottle()
   @Sse("codex-runs/:codexRunId/events")
   stream(
     @Param("codexRunId") codexRunId: string,

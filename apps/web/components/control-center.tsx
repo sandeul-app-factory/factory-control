@@ -1338,21 +1338,43 @@ function TaskDetailPanel({ taskId, auth }: { taskId: string; auth: AuthState }) 
   const detail = useQuery({
     queryKey: ["task", taskId],
     queryFn: () => apiRequest<DevelopmentTaskDetail>(`/tasks/${taskId}`),
-    refetchInterval: 3_000,
+    refetchInterval: 15_000,
   });
   const latestRun = detail.data?.runs[0];
+  const latestRunId = latestRun?.id;
+  const latestRunStatus = latestRun?.status;
   useEffect(() => {
-    if (!latestRun || !["QUEUED", "STARTING", "RUNNING", "CANCELLING"].includes(latestRun.status)) {
+    if (
+      !latestRunId ||
+      !latestRunStatus ||
+      !["QUEUED", "STARTING", "RUNNING", "CANCELLING"].includes(latestRunStatus)
+    ) {
       return;
     }
+    const cached = queryClient.getQueryData<DevelopmentTaskDetail>(["task", taskId]);
+    const after = Math.max(
+      0,
+      ...(cached?.events
+        .filter((event) => event.codexRunId === latestRunId)
+        .map((event) => event.sequence) ?? []),
+    );
     const base = process.env.NEXT_PUBLIC_API_URL ?? "/api";
-    const source = new EventSource(`${base}/codex-runs/${latestRun.id}/events`);
+    const source = new EventSource(
+      `${base}/codex-runs/${latestRunId}/events?after=${String(after)}`,
+    );
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     source.onmessage = () => {
-      void queryClient.invalidateQueries({ queryKey: ["task", taskId] });
-      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined;
+        void queryClient.invalidateQueries({ queryKey: ["task", taskId] });
+      }, 2_000);
     };
-    return () => source.close();
-  }, [latestRun, queryClient, taskId]);
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      source.close();
+    };
+  }, [latestRunId, latestRunStatus, queryClient, taskId]);
   const cancel = useMutation({
     mutationFn: () =>
       apiRequest(`/tasks/${taskId}/cancel`, {
@@ -1509,7 +1531,7 @@ function TasksPanel({ project, auth }: { project: Project; auth: AuthState }) {
   const tasks = useQuery({
     queryKey: ["tasks", project.id],
     queryFn: () => apiRequest<DevelopmentTask[]>(`/projects/${project.id}/tasks`),
-    refetchInterval: 4_000,
+    refetchInterval: 15_000,
   });
   useEffect(() => {
     if (!selected && tasks.data?.[0]) setSelected(tasks.data[0].id);

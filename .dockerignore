@@ -1,4 +1,5 @@
 .git
+.factory-workspaces/
 .pnpm-store/
 node_modules/
 .next
