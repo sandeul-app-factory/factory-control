@@ -1,5 +1,7 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { promisify } from "node:util";
 import { z } from "zod";
 import { sha256 } from "@sandeul/security";
 
@@ -200,23 +202,31 @@ export class FakeCodexAdapter implements CodexAdapter {
 export class RealCodexAdapter implements CodexAdapter {
   readonly name = "real" as const;
 
-  execute(
+  async execute(
     input: CodexExecutionInput,
     onEvent: (event: CodexEvent) => Promise<void>,
   ): Promise<CodexExecutionOutput> {
+    await prepareWindowsWorkspaceAcl(input.workspacePath);
     return new Promise((resolve, reject) => {
       const executable = process.env.CODEX_BIN ?? "codex";
       const sandbox = process.env.CODEX_SANDBOX ?? "workspace-write";
-      if (sandbox !== "workspace-write") {
+      const permissionProfile = process.env.CODEX_PERMISSION_PROFILE?.trim();
+      if (permissionProfile && permissionProfile !== ":workspace") {
+        reject(new Error("CODEX_PERMISSION_PROFILE only allows :workspace"));
+        return;
+      }
+      if (!permissionProfile && sandbox !== "workspace-write") {
         reject(new Error("CODEX_SANDBOX는 workspace-write만 허용됩니다."));
         return;
       }
+      const permissionArguments = permissionProfile
+        ? ["-c", `default_permissions=${JSON.stringify(permissionProfile)}`]
+        : ["--sandbox", sandbox];
       const child = spawn(
         executable,
         [
           "exec",
-          "--sandbox",
-          sandbox,
+          ...permissionArguments,
           "--json",
           "--output-schema",
           input.outputSchemaPath,
@@ -229,7 +239,7 @@ export class RealCodexAdapter implements CodexAdapter {
           shell: false,
           windowsHide: true,
           stdio: ["pipe", "pipe", "pipe"],
-          env: codexEnvironment(input.workspacePath),
+          env: codexEnvironment(),
         },
       );
       let stderr = "";
@@ -282,6 +292,51 @@ export class RealCodexAdapter implements CodexAdapter {
   }
 }
 
+type AclCommandRunner = (executable: string, args: string[]) => Promise<void>;
+
+interface WindowsWorkspaceAclOptions {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  run?: AclCommandRunner;
+}
+
+const runAclCommand: AclCommandRunner = async (executable, args) => {
+  await promisify(execFile)(executable, args, {
+    windowsHide: true,
+    maxBuffer: 1024 * 1024,
+  });
+};
+
+export async function prepareWindowsWorkspaceAcl(
+  workspacePath: string,
+  options: WindowsWorkspaceAclOptions = {},
+): Promise<void> {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+  const group = env.CODEX_WINDOWS_SANDBOX_GROUP?.trim();
+  if (platform !== "win32" || !group) return;
+  if (!/^[A-Za-z0-9_.-]+(?:\\[A-Za-z0-9_. -]+)?$/.test(group)) {
+    throw new Error("CODEX_WINDOWS_SANDBOX_GROUP contains unsupported characters");
+  }
+  const workspaceRoot = env.CODEX_WORKSPACE_ROOT?.trim();
+  if (!workspaceRoot) {
+    throw new Error("CODEX_WORKSPACE_ROOT is required for Windows workspace ACL setup");
+  }
+  const root = resolve(workspaceRoot);
+  const workspace = resolve(workspacePath);
+  const fromRoot = relative(root, workspace);
+  if (!fromRoot || fromRoot.startsWith("..") || isAbsolute(fromRoot)) {
+    throw new Error("Codex workspace must be a child of CODEX_WORKSPACE_ROOT");
+  }
+  const run = options.run ?? runAclCommand;
+  await run("icacls.exe", [workspace, "/grant:r", `${group}:(OI)(CI)(M)`, "/T", "/C"]);
+
+  const gitDirectory = join(workspace, ".git");
+  await run("icacls.exe", [gitDirectory, "/inheritance:d", "/T", "/C"]);
+  await run("icacls.exe", [gitDirectory, "/remove:g", group, "/T", "/C"]);
+  await run("icacls.exe", [gitDirectory, "/grant:r", `${group}:(OI)(CI)(RX)`, "/T", "/C"]);
+}
+
 function parseJsonlEvent(line: string): CodexEvent {
   try {
     const payload: unknown = JSON.parse(line);
@@ -299,11 +354,19 @@ function parseJsonlEvent(line: string): CodexEvent {
   }
 }
 
-function codexEnvironment(workspacePath: string): NodeJS.ProcessEnv {
+export function codexEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const allowed = [
     "PATH",
     "TEMP",
     "TMP",
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
     "CODEX_HOME",
     "CODEX_API_KEY",
     "OPENAI_API_KEY",
@@ -312,11 +375,7 @@ function codexEnvironment(workspacePath: string): NodeJS.ProcessEnv {
     "NO_PROXY",
   ] as const;
   return {
-    ...Object.fromEntries(
-      allowed.flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
-    ),
-    HOME: workspacePath,
-    USERPROFILE: workspacePath,
+    ...Object.fromEntries(allowed.flatMap((key) => (source[key] ? [[key, source[key]]] : []))),
     GIT_TERMINAL_PROMPT: "0",
   };
 }

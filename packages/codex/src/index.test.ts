@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { FakeCodexAdapter, buildCodexPrompt } from "./index.js";
+import {
+  FakeCodexAdapter,
+  buildCodexPrompt,
+  codexEnvironment,
+  prepareWindowsWorkspaceAcl,
+} from "./index.js";
 
 describe("Codex execution contract", () => {
   it("renders authority, immutable rules, task, and locked PRD hash", () => {
@@ -55,5 +60,52 @@ describe("Codex execution contract", () => {
       },
     ]);
     expect(event).toHaveBeenCalledTimes(4);
+  });
+
+  it("grants task workspace writes while keeping git metadata read-only on Windows", async () => {
+    const calls: Array<{ executable: string; args: string[] }> = [];
+    await prepareWindowsWorkspaceAcl("C:\\factory\\project\\task\\run\\repository", {
+      platform: "win32",
+      env: {
+        CODEX_WORKSPACE_ROOT: "C:\\factory",
+        CODEX_WINDOWS_SANDBOX_GROUP: "FACTORY\\CodexSandboxUsers",
+      },
+      run: (executable, args) => {
+        calls.push({ executable, args });
+        return Promise.resolve();
+      },
+    });
+    expect(calls).toHaveLength(4);
+    expect(calls[0]?.args).toContain("FACTORY\\CodexSandboxUsers:(OI)(CI)(M)");
+    expect(calls[3]?.args).toContain("FACTORY\\CodexSandboxUsers:(OI)(CI)(RX)");
+    expect(calls[3]?.args[0]).toMatch(/repository[\\/]\.git$/);
+  });
+
+  it("rejects Windows ACL changes outside the configured workspace root", async () => {
+    await expect(
+      prepareWindowsWorkspaceAcl("C:\\outside\\repository", {
+        platform: "win32",
+        env: {
+          CODEX_WORKSPACE_ROOT: "C:\\factory",
+          CODEX_WINDOWS_SANDBOX_GROUP: "FACTORY\\CodexSandboxUsers",
+        },
+        run: () => Promise.resolve(),
+      }),
+    ).rejects.toThrow("Codex workspace must be a child");
+  });
+
+  it("preserves the Windows profile needed by Codex without forwarding arbitrary secrets", () => {
+    const environment = codexEnvironment({
+      PATH: "C:\\Windows",
+      USERPROFILE: "C:\\Users\\worker",
+      APPDATA: "C:\\Users\\worker\\AppData\\Roaming",
+      LOCALAPPDATA: "C:\\Users\\worker\\AppData\\Local",
+      CODEX_HOME: "C:\\Users\\worker\\.codex",
+      FACTORY_SECRET: "must-not-leak",
+    });
+    expect(environment.USERPROFILE).toBe("C:\\Users\\worker");
+    expect(environment.APPDATA).toContain("AppData");
+    expect(environment.FACTORY_SECRET).toBeUndefined();
+    expect(environment.GIT_TERMINAL_PROMPT).toBe("0");
   });
 });

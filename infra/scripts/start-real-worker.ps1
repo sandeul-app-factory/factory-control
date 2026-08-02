@@ -114,6 +114,14 @@ $env:S3_PUBLIC_ENDPOINT = if ($env:CODEX_HOST_S3_PUBLIC_ENDPOINT) {
 $env:CODEX_ADAPTER = "real"
 $env:CODEX_BIN = $codex
 $env:CODEX_HOME = $codexHome
+$codexConfig = Join-Path $codexHome "config.toml"
+if (
+  (Test-Path -LiteralPath $codexConfig -PathType Leaf) -and
+  (Select-String -LiteralPath $codexConfig -Pattern '^\s*sandbox\s*=\s*["'']unelevated["'']\s*$' -Quiet)
+) {
+  $env:CODEX_WINDOWS_SANDBOX_GROUP = "$env:COMPUTERNAME\CodexSandboxUsers"
+  $env:CODEX_PERMISSION_PROFILE = ":workspace"
+}
 $env:CODEX_WORKSPACE_ROOT = $workspaceRoot
 $env:CODEX_RESULT_SCHEMA_PATH = Join-Path $repositoryRoot "schemas\codex\codex-result.schema.json"
 $env:JAVA_HOME = $javaHome
@@ -168,7 +176,7 @@ try {
   if ($Watch) {
     & $pnpm --filter "@sandeul/worker" dev
   } else {
-    & $pnpm --filter "@sandeul/worker" build
+    & $pnpm --filter "@sandeul/worker..." build
     if ($LASTEXITCODE -ne 0) {
       throw "Worker build failed."
     }
