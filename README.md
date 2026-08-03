@@ -102,6 +102,7 @@ macOS Docker Worker profile로 격리해 실행한다. Cloudflare Tunnel은 gate
 - [MCP endpoint](docs/api/mcp.md)
 - [아키텍처](docs/architecture/overview.md)
 - [위협 모델](docs/security/threat-model.md)
+- [새 세션용 프로젝트 컨텍스트](docs/project-context.md)
 
 기존 GitHub 조직·원격 저장소·앱 Repository·DNS·Tunnel·Secret을 자동으로 변경하거나
 삭제하지 않는다. 실제 원격 저장소 연결, GitHub App 설치, Cloudflare tunnel ID,

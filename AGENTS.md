@@ -1,5 +1,15 @@
 # Sandeul App Factory Engineering Instructions
 
+## Session Bootstrap
+
+새 작업 세션은 코드 탐색이나 수정 전에 `docs/project-context.md`를 전체 읽는다. 이 문서는
+제품 목적, 현재 사용자 흐름, Repository 구조, 운영 전환 상태와 작업별 문서 경로의
+단일 진입점이다. 이후 현재 요청에 필요한 전문 문서만 추가로 읽는다.
+
+문서와 실제 코드 또는 운영 상태가 다르면 읽기 전용 점검으로 사실을 확인하고 차이를
+명시한다. 코드 변경으로 동작이 달라지면 `docs/project-context.md`와 관련 전문 문서를
+같은 변경에 포함한다.
+
 ## Requirement Priority
 
 Factory 개발에서 요구사항 충돌 시 다음 순서를 따른다.
